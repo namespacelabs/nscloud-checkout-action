@@ -10952,7 +10952,7 @@ async function run() {
             await exec.exec(`git clone --mirror -- https://token@github.com/${owner}/${repo}.git ${mirrorDir}`);
         }
         // Fetch commits for mirror
-        await exec.exec(`git -v -c protocol.version=2 --git-dir ${mirrorDir} fetch --no-recurse-submodules origin`);
+        await exec.exec(`git -c protocol.version=2 --git-dir ${mirrorDir} fetch -v --no-recurse-submodules origin`);
         // Prepare repo dir
         let repoDir = workspacePath;
         if (repoPath) {
@@ -10979,7 +10979,7 @@ async function run() {
         }
         // Fetch and Checkout the ref
         const checkoutInfo = await getCheckoutInfo(ref, commit);
-        await exec.exec(`git -v --prune --git-dir ${mirrorDir} fetch --no-recurse-submodules origin ${checkoutInfo.ref}`);
+        await exec.exec(`git --git-dir ${mirrorDir} fetch -v --prune --no-recurse-submodules origin ${checkoutInfo.ref}`);
         if (checkoutInfo.startPoint) {
             await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`);
         }

@@ -80,7 +80,7 @@ export async function run(): Promise<void> {
 
     // Fetch commits for mirror
     await exec.exec(
-      `git -v -c protocol.version=2 --git-dir ${mirrorDir} fetch --no-recurse-submodules origin`
+      `git -c protocol.version=2 --git-dir ${mirrorDir} fetch -v --no-recurse-submodules origin`
     )
 
     // Prepare repo dir
@@ -118,7 +118,7 @@ export async function run(): Promise<void> {
     // Fetch and Checkout the ref
     const checkoutInfo = await getCheckoutInfo(ref, commit)
     await exec.exec(
-      `git -v --prune --git-dir ${mirrorDir} fetch --no-recurse-submodules origin ${checkoutInfo.ref}`
+      `git --git-dir ${mirrorDir} fetch -v --prune --no-recurse-submodules origin ${checkoutInfo.ref}`
     )
     if (checkoutInfo.startPoint) {
       await exec.exec(
