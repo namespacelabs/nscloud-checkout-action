@@ -108,7 +108,7 @@ export async function run(): Promise<void> {
       for (let line of output.stdout.trim().split('\n')) {
         line = line.trim()
         if (line.startsWith('origin/')) {
-          ref = line.split('/')[1]
+          ref = `refs/heads/${line.split('/')[1].trim()}`
         }
       }
     }
