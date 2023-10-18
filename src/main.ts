@@ -12,16 +12,23 @@ export async function run(): Promise<void> {
     const owner = splitRepo[0]
     const repo = splitRepo[1]
 
+    // Workflow repository?
+    const isWorkflowRepository =
+      ownerRepo.toUpperCase() ===
+      `${github.context.repo.owner}/${github.context.repo.repo}`.toUpperCase()
+
     let ref = core.getInput('ref')
     let commit = ''
     if (!ref) {
-      ref = github.context.ref
-      commit = github.context.sha
+      if (isWorkflowRepository) {
+        ref = github.context.ref
+        commit = github.context.sha
 
-      // Some events have an unqualifed ref. For example when a PR is merged (pull_request closed event),
-      // the ref is unqualifed like "main" instead of "refs/heads/main".
-      if (commit && ref && !ref.startsWith('refs/')) {
-        ref = `refs/heads/${ref}`
+        // Some events have an unqualifed ref. For example when a PR is merged (pull_request closed event),
+        // the ref is unqualifed like "main" instead of "refs/heads/main".
+        if (commit && ref && !ref.startsWith('refs/')) {
+          ref = `refs/heads/${ref}`
+        }
       }
     } else if (ref.match(/^[0-9a-fA-F]{40}$/)) {
       // SHA
@@ -90,6 +97,20 @@ export async function run(): Promise<void> {
       await exec.exec(
         `git clone --reference ${mirrorDir} --depth=${fetchDepth} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`
       )
+    }
+
+    // When ref is unspecified and for repositories different from the one where the workflow is running
+    // resolve their default branch and use it as `ref`
+    if (!ref && !isWorkflowRepository) {
+      const output = await exec.getExecOutput(
+        `git --git-dir ${repoDir}/.git --work-tree ${repoDir} symbolic-ref refs/remotes/origin/HEAD --short`
+      )
+      for (let line of output.stdout.trim().split('\n')) {
+        line = line.trim()
+        if (line.startsWith('origin/')) {
+          ref = line.split('/')[1]
+        }
+      }
     }
 
     const checkoutInfo = await getCheckoutInfo(ref, commit)
