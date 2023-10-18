@@ -11012,8 +11012,7 @@ async function getCheckoutInfo(ref, commit) {
     }
     // refs/pull/
     else if (upperRef.startsWith('REFS/PULL/')) {
-        const branch = ref.substring('refs/pull/'.length);
-        result.ref = `refs/remotes/pull/${branch}`;
+        result.ref = ref;
     }
     // refs/tags/
     else if (upperRef.startsWith('REFS/')) {
