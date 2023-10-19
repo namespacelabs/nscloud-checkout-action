@@ -11012,7 +11012,13 @@ async function getCheckoutInfo(ref, commit) {
     }
     // refs/pull/
     else if (upperRef.startsWith('REFS/PULL/')) {
-        result.ref = ref;
+        const prNumber = ref.split('/')[2];
+        if (prNumber) {
+            result.ref = `refs/pull/${prNumber}/head`;
+        }
+        else {
+            result.ref = ref;
+        }
     }
     // refs/tags/
     else if (upperRef.startsWith('REFS/')) {
