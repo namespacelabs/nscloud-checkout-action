@@ -10984,7 +10984,7 @@ async function run() {
             await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`);
         }
         else {
-            await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${checkoutInfo.ref}`);
+            await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${commit}`);
         }
     }
     catch (error) {

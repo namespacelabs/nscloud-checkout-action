@@ -126,7 +126,7 @@ export async function run(): Promise<void> {
       )
     } else {
       await exec.exec(
-        `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${checkoutInfo.ref}`
+        `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${commit}`
       )
     }
   } catch (error) {
