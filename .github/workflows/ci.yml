@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 jobs:
-   nscloud-runner:
+  nscloud-runner:
     name: GitHub Actions Test on Nscloud Runner
     runs-on: [nscloud-ubuntu-22.04-staging-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
 
