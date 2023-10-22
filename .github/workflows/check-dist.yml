@@ -29,9 +29,14 @@ jobs:
       statuses: write
 
     steps:
+      - name: Github Checkout
+        uses: actions/checkout@v4
+        with:
+          path: nscloud-checkout-action
+          
       - name: Checkout
         id: checkout
-        uses: ./ # Uses an action in the root directory
+        uses: nscloud-checkout-action/ # Uses an action in the root directory
 
       - name: Setup Node.js
         uses: actions/setup-node@v3
