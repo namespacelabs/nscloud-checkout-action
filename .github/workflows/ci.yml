@@ -14,22 +14,20 @@ jobs:
     runs-on: [nscloud-ubuntu-22.04-staging-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
 
     steps:
+      - name: Github Checkout
+        uses: actions/checkout@v4
       - name: Namespace Checkout
         uses: ./ # Uses an action in the root directory
         with:
           path: nscloud
-      - name: Github Checkout
-        uses: actions/checkout@v4
-        with:
-          path: original
       - name: Compare main
         run: |
-          if cmp --silent -- original/action.yml nscloud/action.yml; then
+          if cmp --silent -- action.yml nscloud/action.yml; then
             echo "files contents are identical"
           else
             echo "files differ:"
 
-            diff original/action.yml nscloud/action.yml
+            diff action.yml nscloud/action.yml
 
             exit 1
           fi
