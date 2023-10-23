@@ -10891,7 +10891,7 @@ var __importStar = (this && this.__importStar) || function (mod) {
     return result;
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.getCheckoutInfo = exports.run = void 0;
+exports.getFetchInfo = exports.getCheckoutInfo = exports.run = void 0;
 const core = __importStar(__nccwpck_require__(2186));
 const github = __importStar(__nccwpck_require__(5438));
 const exec = __importStar(__nccwpck_require__(1514));
@@ -10977,9 +10977,11 @@ async function run() {
                 }
             }
         }
-        // Fetch and Checkout the ref
+        // Fetch the ref
+        const fetchInfo = await getFetchInfo(ref, commit);
+        await exec.exec(`git --git-dir ${mirrorDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`);
+        // Checkout the ref
         const checkoutInfo = await getCheckoutInfo(ref, commit);
-        await exec.exec(`git --git-dir ${mirrorDir} fetch -v --prune --no-recurse-submodules origin ${checkoutInfo.ref}`);
         if (checkoutInfo.startPoint) {
             await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`);
         }
@@ -11027,6 +11029,39 @@ async function getCheckoutInfo(ref, commit) {
     return result;
 }
 exports.getCheckoutInfo = getCheckoutInfo;
+async function getFetchInfo(ref, commit) {
+    if (!ref && !commit) {
+        throw new Error('Args ref and commit cannot both be empty');
+    }
+    const result = {};
+    const upperRef = (ref || '').toUpperCase();
+    // SHA only
+    if (!ref) {
+        result.ref = commit;
+    }
+    // refs/heads/
+    else if (upperRef.startsWith('REFS/HEADS/')) {
+        const branch = ref.substring('refs/heads/'.length);
+        result.ref = branch;
+        result.startPoint = `refs/remotes/origin/${branch}`;
+    }
+    // refs/pull/
+    else if (upperRef.startsWith('REFS/PULL/')) {
+        const prNumber = ref.split('/')[2];
+        if (prNumber) {
+            result.ref = `+${commit}:refs/pull/${prNumber}/head`;
+        }
+        else {
+            result.ref = ref;
+        }
+    }
+    // refs/tags/
+    else if (upperRef.startsWith('REFS/')) {
+        result.ref = ref;
+    }
+    return result;
+}
+exports.getFetchInfo = getFetchInfo;
 
 
 /***/ }),

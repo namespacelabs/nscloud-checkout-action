@@ -115,11 +115,14 @@ export async function run(): Promise<void> {
       }
     }
 
-    // Fetch and Checkout the ref
-    const checkoutInfo = await getCheckoutInfo(ref, commit)
+    // Fetch the ref
+    const fetchInfo = await getFetchInfo(ref, commit)
     await exec.exec(
-      `git --git-dir ${mirrorDir} fetch -v --prune --no-recurse-submodules origin ${checkoutInfo.ref}`
+      `git --git-dir ${mirrorDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`
     )
+
+    // Checkout the ref
+    const checkoutInfo = await getCheckoutInfo(ref, commit)
     if (checkoutInfo.startPoint) {
       await exec.exec(
         `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`
@@ -166,6 +169,48 @@ export async function getCheckoutInfo(
     const prNumber = ref.split('/')[2]
     if (prNumber) {
       result.ref = `refs/pull/${prNumber}/head`
+    } else {
+      result.ref = ref
+    }
+  }
+  // refs/tags/
+  else if (upperRef.startsWith('REFS/')) {
+    result.ref = ref
+  }
+
+  return result
+}
+
+export interface IFetchInfo {
+  ref: string
+}
+
+export async function getFetchInfo(
+  ref: string,
+  commit: string
+): Promise<IFetchInfo> {
+  if (!ref && !commit) {
+    throw new Error('Args ref and commit cannot both be empty')
+  }
+
+  const result = {} as unknown as ICheckoutInfo
+  const upperRef = (ref || '').toUpperCase()
+
+  // SHA only
+  if (!ref) {
+    result.ref = commit
+  }
+  // refs/heads/
+  else if (upperRef.startsWith('REFS/HEADS/')) {
+    const branch = ref.substring('refs/heads/'.length)
+    result.ref = branch
+    result.startPoint = `refs/remotes/origin/${branch}`
+  }
+  // refs/pull/
+  else if (upperRef.startsWith('REFS/PULL/')) {
+    const prNumber = ref.split('/')[2]
+    if (prNumber) {
+      result.ref = `+${commit}:refs/pull/${prNumber}/head`
     } else {
       result.ref = ref
     }
