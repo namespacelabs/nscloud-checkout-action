@@ -10952,7 +10952,7 @@ async function run() {
             await exec.exec(`git clone --mirror -- https://token@github.com/${owner}/${repo}.git ${mirrorDir}`);
         }
         // Fetch commits for mirror
-        await exec.exec(`git -c protocol.version=2 --git-dir ${mirrorDir} fetch -v --no-recurse-submodules origin`);
+        await exec.exec(`git -c protocol.version=2 --git-dir ${mirrorDir} fetch --no-recurse-submodules origin`);
         // Prepare repo dir
         let repoDir = workspacePath;
         if (repoPath) {
@@ -10979,7 +10979,7 @@ async function run() {
         }
         // Fetch the ref
         const fetchInfo = await getFetchInfo(ref, commit);
-        await exec.exec(`git --git-dir ${mirrorDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`);
+        await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`);
         // Checkout the ref
         const checkoutInfo = await getCheckoutInfo(ref, commit);
         if (checkoutInfo.startPoint) {
@@ -11042,8 +11042,12 @@ async function getFetchInfo(ref, commit) {
     // refs/heads/
     else if (upperRef.startsWith('REFS/HEADS/')) {
         const branch = ref.substring('refs/heads/'.length);
-        result.ref = branch;
-        result.startPoint = `refs/remotes/origin/${branch}`;
+        if (commit) {
+            result.ref = `+${commit}:refs/remotes/origin/${branch}`;
+        }
+        else {
+            result.ref = `${branch}`;
+        }
     }
     // refs/pull/
     else if (upperRef.startsWith('REFS/PULL/')) {

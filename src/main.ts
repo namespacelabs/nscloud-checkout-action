@@ -80,7 +80,7 @@ export async function run(): Promise<void> {
 
     // Fetch commits for mirror
     await exec.exec(
-      `git -c protocol.version=2 --git-dir ${mirrorDir} fetch -v --no-recurse-submodules origin`
+      `git -c protocol.version=2 --git-dir ${mirrorDir} fetch --no-recurse-submodules origin`
     )
 
     // Prepare repo dir
@@ -118,7 +118,7 @@ export async function run(): Promise<void> {
     // Fetch the ref
     const fetchInfo = await getFetchInfo(ref, commit)
     await exec.exec(
-      `git --git-dir ${mirrorDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`
+      `git --git-dir ${repoDir}/.git --work-tree ${repoDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`
     )
 
     // Checkout the ref
@@ -203,8 +203,11 @@ export async function getFetchInfo(
   // refs/heads/
   else if (upperRef.startsWith('REFS/HEADS/')) {
     const branch = ref.substring('refs/heads/'.length)
-    result.ref = branch
-    result.startPoint = `refs/remotes/origin/${branch}`
+    if (commit) {
+      result.ref = `+${commit}:refs/remotes/origin/${branch}`
+    } else {
+      result.ref = `${branch}`
+    }
   }
   // refs/pull/
   else if (upperRef.startsWith('REFS/PULL/')) {
