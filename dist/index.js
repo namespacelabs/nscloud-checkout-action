@@ -10932,6 +10932,13 @@ async function run() {
         core.debug(`Depth ${fetchDepth}`);
         const repoPath = core.getInput('path');
         core.debug(`Path ${repoPath}`);
+        // Submodules
+        let submodules = false;
+        const submodulesString = (core.getInput('submodules') || '').toUpperCase();
+        if (submodulesString == 'TRUE') {
+            submodules = true;
+        }
+        core.debug(`submodules = ${submodules}`);
         const gitMirrorPath = process.env['NSC_GIT_MIRROR'];
         core.debug(`Git mirror path ${gitMirrorPath}`);
         if (!gitMirrorPath || !fs.existsSync(gitMirrorPath)) {
@@ -10945,14 +10952,23 @@ async function run() {
         // Set authentication
         const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
         await exec.exec(`git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`);
+        const submodulesFlag = submodules ? '--recurse-submodules --jobs=8' : '';
         // Prepare mirror if does not exist
         const mirrorDir = path.join(gitMirrorPath, `${owner}-${repo}`);
         if (!fs.existsSync(mirrorDir)) {
             fs.mkdirSync(mirrorDir);
-            await exec.exec(`git clone --mirror -- https://token@github.com/${owner}/${repo}.git ${mirrorDir}`);
+            await exec.exec(`git clone ${submodulesFlag} -- https://token@github.com/${owner}/${repo}.git ${mirrorDir}`);
+        }
+        // Support legacy caches, where the mirror was cloned as bare repo (i.e. only the .git folder)
+        let mirrorGitDir = `${mirrorDir}/.git`;
+        if (!fs.existsSync(mirrorGitDir)) {
+            mirrorGitDir = mirrorDir; // Legacy mirror structure, the mirror path is the .git folder itself
         }
         // Fetch commits for mirror
-        await exec.exec(`git -c protocol.version=2 --git-dir ${mirrorDir} fetch --no-recurse-submodules origin`);
+        const fetchSubmodules = submodules
+            ? '--multiple --jobs=8 --recurse-submodules'
+            : '';
+        await exec.exec(`git -c protocol.version=2 --git-dir ${mirrorGitDir} fetch ${fetchSubmodules} origin`);
         // Prepare repo dir
         let repoDir = workspacePath;
         if (repoPath) {
@@ -10961,10 +10977,10 @@ async function run() {
         // Clone the repo
         await exec.exec(`git config --global --add safe.directory ${repoDir}`);
         if (fetchDepth <= 0) {
-            await exec.exec(`git clone --reference ${mirrorDir} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`);
+            await exec.exec(`git clone --reference ${mirrorGitDir} ${submodulesFlag} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`);
         }
         else {
-            await exec.exec(`git clone --reference ${mirrorDir} --depth=${fetchDepth} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`);
+            await exec.exec(`git clone --reference ${mirrorGitDir} ${submodulesFlag} --depth=${fetchDepth} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`);
         }
         // When ref is unspecified and for repositories different from the one where the workflow is running
         // resolve their default branch and use it as `ref`
