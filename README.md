@@ -50,7 +50,8 @@ steps:
       # Relative path under $GITHUB_WORKSPACE to place the repository
       path: ''
 
-      # Whether to checkout submodules: `true` to recursively checkout submodules
+      # Whether to checkout submodules: `true` to checkout submodules or `recursive` to
+      # recursively checkout submodules.
       #
       # When the `ssh-key` input is not provided, SSH URLs beginning with
       # `git@github.com:` are converted to HTTPS.
