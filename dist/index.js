@@ -10924,11 +10924,10 @@ async function run() {
         const fetchDepthFlag = config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`;
         // Clone submodules
         if (config.submodules) {
-            const recursiveFlag = config.nestedSubmodules ? '--recursive' : '';
-            await exec.exec(`git submodule sync ${recursiveFlag}`, [], {
+            await exec.exec(`git submodule sync`, [], {
                 cwd: mirrorDir
             });
-            await exec.exec(`git -c protocol.version=2 submodule update --init ${recursiveFlag} --jobs=8 --force ${fetchDepthFlag}`, [], { cwd: mirrorDir });
+            await exec.exec(`git -c protocol.version=2 submodule update --init --force ${fetchDepthFlag}`, [], { cwd: mirrorDir });
         }
         // Fetch commits for mirror
         const fetchSubmodules = config.submodules
