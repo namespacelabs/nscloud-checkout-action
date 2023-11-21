@@ -48,7 +48,7 @@ export async function run(): Promise<void> {
 
     const fetchDepthFlag =
       config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`
-    // Clone submodules
+    // Clone submodules in mirror
     if (config.submodules) {
       await exec.exec(`git submodule sync`, [], {
         cwd: mirrorDir
@@ -61,11 +61,11 @@ export async function run(): Promise<void> {
     }
 
     // Fetch commits for mirror
-    const fetchSubmodules = config.submodules
+    const fetchSubmodules = config.nestedSubmodules
       ? `--multiple --jobs=8 --recurse-submodules`
       : ''
     await exec.exec(
-      `git -c protocol.version=2 --git-dir ${mirrorDir}/.git fetch ${fetchSubmodules} origin`
+      `git -c protocol.version=2 --git-dir ${mirrorDir}/.git fetch ${fetchDepthFlag} ${fetchSubmodules} origin`
     )
 
     // Prepare repo dir
@@ -75,13 +75,26 @@ export async function run(): Promise<void> {
     }
 
     // Clone the repo
-    const submodulesFlag = config.submodules
-      ? `--recurse-submodules --jobs=8`
-      : ''
     await exec.exec(`git config --global --add safe.directory ${repoDir}`)
     await exec.exec(
-      `git clone --reference-if-able ${mirrorDir} ${submodulesFlag} ${fetchDepthFlag} -- https://token@github.com/${config.owner}/${config.repo}.git ${repoDir}`
+      `git clone --reference-if-able ${mirrorDir} ${fetchDepthFlag} -- https://token@github.com/${config.owner}/${config.repo}.git ${repoDir}`
     )
+
+    // Clone submodules in repo
+    if (config.submodules) {
+      const recursiveFlag = config.nestedSubmodules ? `--recursive` : ''
+      await exec.exec(`git submodule sync ${recursiveFlag}`, [], {
+        cwd: repoDir
+      })
+      const recursiveWithJobsFlag = config.nestedSubmodules
+        ? `--recursive --jobs=8`
+        : ''
+      await exec.exec(
+        `git -c protocol.version=2 submodule update --init --force ${fetchDepthFlag} ${recursiveWithJobsFlag}`,
+        [],
+        { cwd: repoDir }
+      )
+    }
 
     // When ref is unspecified and for repositories different from the one where the workflow is running
     // resolve their default branch and use it as `ref`
