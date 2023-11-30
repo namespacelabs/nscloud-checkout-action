@@ -65,7 +65,7 @@ export async function run(): Promise<void> {
       ? `--multiple --jobs=8 --recurse-submodules`
       : ''
     await exec.exec(
-      `git -c protocol.version=2 --git-dir ${mirrorDir}/.git fetch ${fetchDepthFlag} ${fetchSubmodules} origin`
+      `git -c protocol.version=2 --git-dir ${mirrorDir}/.git fetch ${fetchSubmodules} origin`
     )
 
     // Prepare repo dir

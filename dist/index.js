@@ -10933,7 +10933,7 @@ async function run() {
         const fetchSubmodules = config.nestedSubmodules
             ? `--multiple --jobs=8 --recurse-submodules`
             : '';
-        await exec.exec(`git -c protocol.version=2 --git-dir ${mirrorDir}/.git fetch ${fetchDepthFlag} ${fetchSubmodules} origin`);
+        await exec.exec(`git -c protocol.version=2 --git-dir ${mirrorDir}/.git fetch ${fetchSubmodules} origin`);
         // Prepare repo dir
         let repoDir = workspacePath;
         if (config.targetPath) {
