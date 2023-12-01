@@ -278,7 +278,7 @@ async function gitClone(
 
 async function gitFetch(gitDir: string) {
   await exec.exec(
-    `git -c protocol.version=2 --git-dir gitDir fetch --no-recurse-submodules origin`
+    `git -c protocol.version=2 --git-dir ${gitDir} fetch --no-recurse-submodules origin`
   )
 }
 

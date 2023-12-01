@@ -11099,7 +11099,7 @@ async function gitClone(owner, repo, repoDir, flags) {
     await exec.exec(`git clone ${flagString} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`);
 }
 async function gitFetch(gitDir) {
-    await exec.exec(`git -c protocol.version=2 --git-dir gitDir fetch --no-recurse-submodules origin`);
+    await exec.exec(`git -c protocol.version=2 --git-dir ${gitDir} fetch --no-recurse-submodules origin`);
 }
 async function gitSubmoduleSyncUpload(config, repoDir, updateFlags) {
     const recursiveFlag = config.nestedSubmodules ? `--recursive` : '';
