@@ -4,6 +4,8 @@ import * as exec from '@actions/exec'
 import * as fs from 'fs'
 import * as path from 'path'
 
+const version = 'v2'
+
 export async function run(): Promise<void> {
   try {
     const config = parseInputConfig()
@@ -26,11 +28,15 @@ export async function run(): Promise<void> {
     await configGitAuth(config.token)
 
     // Prepare mirror if does not exist
+    // Layout depends on version:
     // v1/ path was introduced with v1 tag because the way we cloned the mirror in v0 was not
-    // compatible with caching submodules, so we had to change the mirror repo directory to force a re-clone
+    // compatible with caching submodules, so we had to change the mirror repo directory to force a re-clone.
+    // v2/ path was introduced to fix a bug in the way a shallow mirror repo worked when referenced by a cloned
+    // repo with submodules, in that case caching did not happen, so we restore in v2 the mirror repo as is used to be in v0
+    // and not attempt to cache also recursive submodules.
     const mirrorDir = path.join(
       gitMirrorPath,
-      `v1/${config.owner}-${config.repo}`
+      `${version}/${config.owner}-${config.repo}`
     )
     if (!fs.existsSync(mirrorDir)) {
       fs.mkdirSync(mirrorDir, { recursive: true })

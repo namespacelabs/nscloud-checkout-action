@@ -10897,6 +10897,7 @@ const github = __importStar(__nccwpck_require__(5438));
 const exec = __importStar(__nccwpck_require__(1514));
 const fs = __importStar(__nccwpck_require__(7147));
 const path = __importStar(__nccwpck_require__(1017));
+const version = 'v2';
 async function run() {
     try {
         const config = parseInputConfig();
@@ -10913,9 +10914,13 @@ async function run() {
         // Set authentication
         await configGitAuth(config.token);
         // Prepare mirror if does not exist
+        // Layout depends on version:
         // v1/ path was introduced with v1 tag because the way we cloned the mirror in v0 was not
-        // compatible with caching submodules, so we had to change the mirror repo directory to force a re-clone
-        const mirrorDir = path.join(gitMirrorPath, `v1/${config.owner}-${config.repo}`);
+        // compatible with caching submodules, so we had to change the mirror repo directory to force a re-clone.
+        // v2/ path was introduced to fix a bug in the way a shallow mirror repo worked when referenced by a cloned
+        // repo with submodules, in that case caching did not happen, so we restore in v2 the mirror repo as is used to be in v0
+        // and not attempt to cache also recursive submodules.
+        const mirrorDir = path.join(gitMirrorPath, `${version}/${config.owner}-${config.repo}`);
         if (!fs.existsSync(mirrorDir)) {
             fs.mkdirSync(mirrorDir, { recursive: true });
             await gitClone(config.owner, config.repo, mirrorDir, ['--mirror']);
