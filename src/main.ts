@@ -6,7 +6,7 @@ import * as path from 'path'
 
 export async function run(): Promise<void> {
   try {
-    const config = await parseInputConfig()
+    const config = parseInputConfig()
 
     const gitMirrorPath = process.env['NSC_GIT_MIRROR']
     core.debug(`Git mirror path ${gitMirrorPath}`)
@@ -23,14 +23,7 @@ export async function run(): Promise<void> {
     }
 
     // Set authentication
-    const basicCredential = Buffer.from(
-      `x-access-token:${config.token}`,
-      'utf8'
-    ).toString('base64')
-
-    await exec.exec(
-      `git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`
-    )
+    await configGitAuth(config.token)
 
     // Prepare mirror if does not exist
     // v1/ path was introduced with v1 tag because the way we cloned the mirror in v0 was not
@@ -41,32 +34,11 @@ export async function run(): Promise<void> {
     )
     if (!fs.existsSync(mirrorDir)) {
       fs.mkdirSync(mirrorDir, { recursive: true })
-      await exec.exec(
-        `git clone -- https://token@github.com/${config.owner}/${config.repo}.git ${mirrorDir}`
-      )
-    }
-
-    const fetchDepthFlag =
-      config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`
-    // Clone submodules in mirror
-    if (config.submodules) {
-      await exec.exec(`git submodule sync`, [], {
-        cwd: mirrorDir
-      })
-      await exec.exec(
-        `git -c protocol.version=2 submodule update --init --force ${fetchDepthFlag}`,
-        [],
-        { cwd: mirrorDir }
-      )
+      await gitClone(config.owner, config.repo, mirrorDir, ['--mirror'])
     }
 
     // Fetch commits for mirror
-    const fetchSubmodules = config.nestedSubmodules
-      ? `--multiple --jobs=8 --recurse-submodules`
-      : ''
-    await exec.exec(
-      `git -c protocol.version=2 --git-dir ${mirrorDir}/.git fetch ${fetchSubmodules} origin`
-    )
+    await gitFetch(mirrorDir)
 
     // Prepare repo dir
     let repoDir = workspacePath
@@ -76,24 +48,16 @@ export async function run(): Promise<void> {
 
     // Clone the repo
     await exec.exec(`git config --global --add safe.directory ${repoDir}`)
-    await exec.exec(
-      `git clone --reference-if-able ${mirrorDir} ${fetchDepthFlag} -- https://token@github.com/${config.owner}/${config.repo}.git ${repoDir}`
-    )
+    const fetchDepthFlag =
+      config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`
+    await gitClone(config.owner, config.repo, repoDir, [
+      `--reference=${mirrorDir}`,
+      `${fetchDepthFlag}`
+    ])
 
     // Clone submodules in repo
     if (config.submodules) {
-      const recursiveFlag = config.nestedSubmodules ? `--recursive` : ''
-      await exec.exec(`git submodule sync ${recursiveFlag}`, [], {
-        cwd: repoDir
-      })
-      const recursiveWithJobsFlag = config.nestedSubmodules
-        ? `--recursive --jobs=8`
-        : ''
-      await exec.exec(
-        `git -c protocol.version=2 submodule update --init --force ${fetchDepthFlag} ${recursiveWithJobsFlag}`,
-        [],
-        { cwd: repoDir }
-      )
+      await gitSubmoduleSyncUpload(config, repoDir, [`${fetchDepthFlag}`])
     }
 
     // When ref is unspecified and for repositories different from the one where the workflow is running
@@ -113,13 +77,13 @@ export async function run(): Promise<void> {
     }
 
     // Fetch the ref
-    const fetchInfo = await getFetchInfo(ref, commit)
+    const fetchInfo = getFetchInfo(ref, commit)
     await exec.exec(
       `git --git-dir ${repoDir}/.git --work-tree ${repoDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`
     )
 
     // Checkout the ref
-    const checkoutInfo = await getCheckoutInfo(ref, commit)
+    const checkoutInfo = getCheckoutInfo(ref, commit)
     if (checkoutInfo.startPoint) {
       await exec.exec(
         `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`
@@ -135,7 +99,7 @@ export async function run(): Promise<void> {
   }
 }
 
-export interface IInputConfig {
+interface IInputConfig {
   owner: string
   repo: string
   isWorkflowRepository: boolean
@@ -148,7 +112,7 @@ export interface IInputConfig {
   nestedSubmodules: boolean
 }
 
-export async function parseInputConfig(): Promise<IInputConfig> {
+function parseInputConfig(): IInputConfig {
   const result = {} as unknown as IInputConfig
 
   const ownerRepo = core.getInput('repository') // owner/repository
@@ -206,15 +170,12 @@ export async function parseInputConfig(): Promise<IInputConfig> {
   return result
 }
 
-export interface ICheckoutInfo {
+interface ICheckoutInfo {
   ref: string
   startPoint: string
 }
 
-export async function getCheckoutInfo(
-  ref: string,
-  commit: string
-): Promise<ICheckoutInfo> {
+function getCheckoutInfo(ref: string, commit: string): ICheckoutInfo {
   if (!ref && !commit) {
     throw new Error('Args ref and commit cannot both be empty')
   }
@@ -249,14 +210,11 @@ export async function getCheckoutInfo(
   return result
 }
 
-export interface IFetchInfo {
+interface IFetchInfo {
   ref: string
 }
 
-export async function getFetchInfo(
-  ref: string,
-  commit: string
-): Promise<IFetchInfo> {
+function getFetchInfo(ref: string, commit: string): IFetchInfo {
   if (!ref && !commit) {
     throw new Error('Args ref and commit cannot both be empty')
   }
@@ -292,4 +250,52 @@ export async function getFetchInfo(
   }
 
   return result
+}
+
+async function configGitAuth(token: string) {
+  // Set authentication
+  const basicCredential = Buffer.from(
+    `x-access-token:${token}`,
+    'utf8'
+  ).toString('base64')
+
+  await exec.exec(
+    `git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`
+  )
+}
+
+async function gitClone(
+  owner: string,
+  repo: string,
+  repoDir: string,
+  flags: string[]
+) {
+  const flagString = flags.join(' ')
+  await exec.exec(
+    `git clone ${flagString} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`
+  )
+}
+
+async function gitFetch(gitDir: string) {
+  await exec.exec(
+    `git -c protocol.version=2 --git-dir gitDir fetch --no-recurse-submodules origin`
+  )
+}
+
+async function gitSubmoduleSyncUpload(
+  config: IInputConfig,
+  repoDir: string,
+  updateFlags: string[]
+) {
+  const recursiveFlag = config.nestedSubmodules ? `--recursive` : ''
+  await exec.exec(`git submodule sync ${recursiveFlag}`, [], {
+    cwd: repoDir
+  })
+  const recursiveWithJobsFlag = config.nestedSubmodules ? `--recursive` : ''
+  const updateFlagString = updateFlags.join(' ')
+  await exec.exec(
+    `git -c protocol.version=2 submodule update --init --force ${updateFlagString} ${recursiveWithJobsFlag}`,
+    [],
+    { cwd: repoDir }
+  )
 }
