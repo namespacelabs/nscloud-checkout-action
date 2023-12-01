@@ -11098,6 +11098,7 @@ async function configGitAuth(token) {
     // Set authentication
     const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
     await exec.exec(`git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`);
+    await exec.exec(`git config --global --add url.https://github.com/.insteadOf git@github.com:`);
 }
 async function gitClone(owner, repo, repoDir, flags) {
     const flagString = flags.join(' ');

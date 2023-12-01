@@ -53,8 +53,7 @@ steps:
       # Whether to checkout submodules: `true` to checkout submodules or `recursive` to
       # recursively checkout submodules.
       #
-      # When the `ssh-key` input is not provided, SSH URLs beginning with
-      # `git@github.com:` are converted to HTTPS.
+      # SSH URLs beginning with `git@github.com:` are converted to HTTPS.
       #
       # Default: false
       submodules: ''

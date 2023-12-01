@@ -268,6 +268,9 @@ async function configGitAuth(token: string) {
   await exec.exec(
     `git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`
   )
+  await exec.exec(
+    `git config --global --add url.https://github.com/.insteadOf git@github.com:`
+  )
 }
 
 async function gitClone(
