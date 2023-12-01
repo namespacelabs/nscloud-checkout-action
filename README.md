@@ -3,6 +3,12 @@
 This action is a specialized and optimized version of [`actions/checkout`](https://github.com/actions/checkout) for Namespace Runners.
 It expects to run in a Namespace Runner and it will fail for otherwise. It also expects that the _git mirror_ feature is enabled in 
 the Namespace runner. 
+
+This action uses [Namespace Cache Volumes](https://namespace.so/docs/concepts/storage) to store a mirror of your git repository, and uses it speed up the checkout process.
+
+> [!WARNING]  
+> Git submodules are supported but are not cached at the moment.
+
 ## Usage
 
 Both Namespace Cache Volume and Git mirror must be enabled. Note the `-with-cache` suffix and `nscloud-git-mirror-5gb` below.
