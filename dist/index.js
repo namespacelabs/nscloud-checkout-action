@@ -10901,12 +10901,12 @@ const version = 'v2';
 async function run() {
     try {
         const config = parseInputConfig();
-        const gitMirrorPath = process.env['NSC_GIT_MIRROR'];
+        const gitMirrorPath = process.env.NSC_GIT_MIRROR;
         core.debug(`Git mirror path ${gitMirrorPath}`);
         if (!gitMirrorPath || !fs.existsSync(gitMirrorPath)) {
-            throw new Error(`Experimental git mirror feature must be enabled.`);
+            throw new Error('Experimental git mirror feature must be enabled.');
         }
-        const workspacePath = process.env['GITHUB_WORKSPACE'];
+        const workspacePath = process.env.GITHUB_WORKSPACE;
         core.debug(`Workspace path ${workspacePath}`);
         if (!workspacePath || !fs.existsSync(workspacePath)) {
             throw new Error(`GitHub Runner workspace is not set GITHUB_WORKSPACE = ${workspacePath}.`);
@@ -11015,11 +11015,11 @@ function parseInputConfig() {
     result.submodules = false;
     result.nestedSubmodules = false;
     const submodulesString = (core.getInput('submodules') || '').toUpperCase();
-    if (submodulesString == 'RECURSIVE') {
+    if (submodulesString === 'RECURSIVE') {
         result.submodules = true;
         result.nestedSubmodules = true;
     }
-    else if (submodulesString == 'TRUE') {
+    else if (submodulesString === 'TRUE') {
         result.submodules = true;
     }
     core.debug(`submodules = ${result.submodules}`);
@@ -11098,7 +11098,7 @@ async function configGitAuth(token) {
     // Set authentication
     const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
     await exec.exec(`git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`);
-    await exec.exec(`git config --global --add url.https://github.com/.insteadOf git@github.com:`);
+    await exec.exec('git config --global --add url.https://github.com/.insteadOf git@github.com:');
 }
 async function gitClone(owner, repo, repoDir, flags) {
     const flagString = flags.join(' ');
@@ -11108,11 +11108,11 @@ async function gitFetch(gitDir) {
     await exec.exec(`git -c protocol.version=2 --git-dir ${gitDir} fetch --no-recurse-submodules origin`);
 }
 async function gitSubmoduleSyncUpload(config, repoDir, updateFlags) {
-    const recursiveFlag = config.nestedSubmodules ? `--recursive` : '';
+    const recursiveFlag = config.nestedSubmodules ? '--recursive' : '';
     await exec.exec(`git submodule sync ${recursiveFlag}`, [], {
         cwd: repoDir
     });
-    const recursiveWithJobsFlag = config.nestedSubmodules ? `--recursive` : '';
+    const recursiveWithJobsFlag = config.nestedSubmodules ? '--recursive' : '';
     const updateFlagString = updateFlags.join(' ');
     await exec.exec(`git -c protocol.version=2 submodule update --init --force ${updateFlagString} ${recursiveWithJobsFlag}`, [], { cwd: repoDir });
 }
