@@ -254,6 +254,13 @@ function getFetchInfo(ref: string, commit: string): IFetchInfo {
   else if (upperRef.startsWith('REFS/')) {
     result.ref = ref
   }
+  // Unqualified ref, check for a matching branch or tag
+  else if (!upperRef.startsWith('REFS/')) {
+    result.ref = [
+      `+refs/heads/${ref}*:refs/remotes/origin/${ref}*`,
+      `+refs/tags/${ref}*:refs/tags/${ref}*`
+    ].join(" ")
+  }
 
   return result
 }
