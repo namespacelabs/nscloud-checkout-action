@@ -22,6 +22,7 @@ jobs:
         uses: ./ # Uses an action in the root directory
         with:
           path: nscloud
+          ref: main
       - name: Compare main
         run: |
           if cmp --silent -- action.yml nscloud/action.yml; then
