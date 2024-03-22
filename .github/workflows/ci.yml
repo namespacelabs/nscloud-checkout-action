@@ -58,6 +58,9 @@ jobs:
     steps:
       - name: Github Checkout
         uses: actions/checkout@v4
+        with:
+          path: nscloud
+          ref: main
       - uses: ruby/action-slack@v3.2.1
         with:
           payload: |
