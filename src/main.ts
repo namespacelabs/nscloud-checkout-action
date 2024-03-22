@@ -259,7 +259,7 @@ function getFetchInfo(ref: string, commit: string): IFetchInfo {
     result.ref = [
       `+refs/heads/${ref}*:refs/remotes/origin/${ref}*`,
       `+refs/tags/${ref}*:refs/tags/${ref}*`
-    ].join(" ")
+    ].join(' ')
   }
 
   return result
