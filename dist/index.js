@@ -11106,7 +11106,7 @@ async function configGitAuth(token) {
     const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
     core.setSecret(basicCredential);
     // (NSL-2981) Remove previous extra auth header if any
-    await exec.exec(`git config --global --unset-all 'http.https://github.com/.extraheader'`, [], { ignoreReturnCode: true });
+    await exec.exec(`git config --global --unset-all http.https://github.com/.extraheader`, [], { ignoreReturnCode: true });
     await exec.exec(`git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`);
     await exec.exec('git config --global --add url.https://github.com/.insteadOf git@github.com:');
 }
