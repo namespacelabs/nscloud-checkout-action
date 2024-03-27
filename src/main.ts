@@ -271,7 +271,12 @@ async function configGitAuth(token: string) {
     `x-access-token:${token}`,
     'utf8'
   ).toString('base64')
+  core.setSecret(basicCredential)
 
+  // (NSL-2981) Remove previous extra auth header if any
+  await exec.exec(
+    `git config --global --unset-all 'http.https://github.com/.extraheader' || :`
+  )
   await exec.exec(
     `git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`
   )
