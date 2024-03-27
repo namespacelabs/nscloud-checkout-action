@@ -275,7 +275,9 @@ async function configGitAuth(token: string) {
 
   // (NSL-2981) Remove previous extra auth header if any
   await exec.exec(
-    `git config --global --unset-all 'http.https://github.com/.extraheader' || :`
+    `git config --global --unset-all 'http.https://github.com/.extraheader'`,
+    [],
+    { ignoreReturnCode: true }
   )
   await exec.exec(
     `git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`
