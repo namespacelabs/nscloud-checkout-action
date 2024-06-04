@@ -99,6 +99,9 @@ export async function run(): Promise<void> {
         `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${commit}`
       )
     }
+
+    // Cleanup authentication config
+    await cleanupGitAuth()
   } catch (error) {
     // Fail the workflow run if an error occurs
     if (error instanceof Error) core.setFailed(error.message)
@@ -284,6 +287,19 @@ async function configGitAuth(token: string) {
   )
   await exec.exec(
     'git config --global --add url.https://github.com/.insteadOf git@github.com:'
+  )
+}
+
+async function cleanupGitAuth() {
+  await exec.exec(
+    `git config --global --unset-all http.https://github.com/.extraheader`,
+    [],
+    { ignoreReturnCode: true }
+  )
+  await exec.exec(
+    `git config --global --unset-all url.https://github.com/.insteadOf`,
+    [],
+    { ignoreReturnCode: true }
   )
 }
 

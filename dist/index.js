@@ -10967,6 +10967,8 @@ async function run() {
         else {
             await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${commit}`);
         }
+        // Cleanup authentication config
+        await cleanupGitAuth();
     }
     catch (error) {
         // Fail the workflow run if an error occurs
@@ -11109,6 +11111,10 @@ async function configGitAuth(token) {
     await exec.exec(`git config --global --unset-all http.https://github.com/.extraheader`, [], { ignoreReturnCode: true });
     await exec.exec(`git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`);
     await exec.exec('git config --global --add url.https://github.com/.insteadOf git@github.com:');
+}
+async function cleanupGitAuth() {
+    await exec.exec(`git config --global --unset-all http.https://github.com/.extraheader`, [], { ignoreReturnCode: true });
+    await exec.exec(`git config --global --unset-all url.https://github.com/.insteadOf`, [], { ignoreReturnCode: true });
 }
 async function gitClone(owner, repo, repoDir, flags) {
     const flagString = flags.join(' ');
