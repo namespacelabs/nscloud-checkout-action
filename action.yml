@@ -29,7 +29,7 @@ inputs:
 
   fetch-depth:
     description: 'Number of commits to fetch. 0 indicates all history for all branches and tags.'
-    default: 1
+    default: "1"
   
   path:
     description: 'Relative path under $GITHUB_WORKSPACE to place the repository'
@@ -42,7 +42,14 @@ inputs:
 
       When the `ssh-key` input is not provided, SSH URLs beginning with `git@github.com:` are
       converted to HTTPS.
-    default: false
+    default: "false"
+
+  dissociate:
+    description: >
+      Whether to dissociate the checkout (and submodules, if any) from the Namespace Git mirror:
+      `true` to dissociate the main checkout, `recursive` to dissociate the main checkout and
+      submodules (recursively).
+    default: "false"
 
 runs:
   using: node20
