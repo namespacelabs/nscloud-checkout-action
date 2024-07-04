@@ -1,8 +1,8 @@
 # Namespace Cloud optimized Checkout Action
 
 This action is a specialized and optimized version of [`actions/checkout`](https://github.com/actions/checkout) for Namespace Runners.
-It expects to run in a Namespace Runner and it will fail for otherwise. It also expects that the _git mirror_ feature is enabled in 
-the Namespace runner. 
+It expects to run in a Namespace Runner and it will fail for otherwise. It also expects that the _git mirror_ feature is enabled in
+the Namespace runner.
 
 This action uses [Namespace Cache Volumes](https://namespace.so/docs/concepts/storage) to store a mirror of your git repository, and uses it speed up the checkout process.
 
@@ -50,7 +50,7 @@ steps:
       token: ''
 
       # Number of commits to fetch. 0 indicates all history for all branches and tags.
-      # Default: 1
+      # Default: 1,
       fetch-depth: ''
 
       # Relative path under $GITHUB_WORKSPACE to place the repository
@@ -63,6 +63,17 @@ steps:
       #
       # Default: false
       submodules: ''
+      
+      dissociate: ''
+      # Dissociate the checkout (and optionally submodules, if any) from the mirror:
+      # `true` to dissociate the main repository or 'recursive' to dissociate the main
+      # repository and all submodules.
+      # Dissociate instructs git to copy all git objects to a checkout directory. After
+      # this, the checkout has no link to the Namespace Git mirror.
+      # This allows docker-based GitHub actions to perform git operations on the checkout,
+      # such as git status.
+      #
+      # Default: false
 ```
 
 ## Development
