@@ -10943,7 +10943,7 @@ async function run() {
         ]);
         // Clone submodules in repo
         if (config.submodules) {
-            await gitSubmoduleUpdate(config, mirrorDir, repoDir);
+            await gitSubmoduleUpdate(config, gitMirrorPath, repoDir);
         }
         // When ref is unspecified and for repositories different from the one where the workflow is running
         // resolve their default branch and use it as `ref`
