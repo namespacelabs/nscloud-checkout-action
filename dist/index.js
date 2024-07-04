@@ -10934,19 +10934,21 @@ async function run() {
         }
         // Clone the repo
         await exec.exec(`git config --global --add safe.directory ${repoDir}`);
-        const fetchDepthFlag = config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`;
+        const fetchDepthFlag = getFetchDepthFlag(config);
+        const dissociateFlag = config.dissociateMainRepo ? '--dissociate' : '';
         await gitClone(config.owner, config.repo, repoDir, [
             `--reference=${mirrorDir}`,
-            `${fetchDepthFlag}`
+            `${fetchDepthFlag}`,
+            `${dissociateFlag}`
         ]);
         // Clone submodules in repo
         if (config.submodules) {
-            await gitSubmoduleSyncUpload(config, repoDir, [`${fetchDepthFlag}`]);
+            await gitSubmoduleUpdate(config, mirrorDir, repoDir);
         }
         // When ref is unspecified and for repositories different from the one where the workflow is running
         // resolve their default branch and use it as `ref`
         let ref = config.ref;
-        let commit = config.commit;
+        const commit = config.commit;
         if (!ref && !config.isWorkflowRepository) {
             const output = await exec.getExecOutput(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} symbolic-ref refs/remotes/origin/HEAD --short`);
             for (let line of output.stdout.trim().split('\n')) {
@@ -11026,6 +11028,19 @@ function parseInputConfig() {
     }
     core.debug(`submodules = ${result.submodules}`);
     core.debug(`recursive submodules = ${result.nestedSubmodules}`);
+    // Dissociate
+    result.dissociateMainRepo = false;
+    result.dissociateSubmodules = false;
+    const dissociateString = (core.getInput('dissociate') || '').toUpperCase();
+    if (dissociateString === 'RECURSIVE') {
+        result.dissociateMainRepo = true;
+        result.dissociateSubmodules = true;
+    }
+    else if (dissociateString === 'TRUE') {
+        result.dissociateMainRepo = true;
+    }
+    core.debug(`dissociateMainRepo = ${result.dissociateMainRepo}`);
+    core.debug(`dissociateSubmodules = ${result.dissociateSubmodules}`);
     return result;
 }
 function getCheckoutInfo(ref, commit) {
@@ -11108,13 +11123,13 @@ async function configGitAuth(token) {
     const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
     core.setSecret(basicCredential);
     // (NSL-2981) Remove previous extra auth header if any
-    await exec.exec(`git config --global --unset-all http.https://github.com/.extraheader`, [], { ignoreReturnCode: true });
+    await exec.exec('git config --global --unset-all http.https://github.com/.extraheader', [], { ignoreReturnCode: true });
     await exec.exec(`git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`);
     await exec.exec('git config --global --add url.https://github.com/.insteadOf git@github.com:');
 }
 async function cleanupGitAuth() {
-    await exec.exec(`git config --global --unset-all http.https://github.com/.extraheader`, [], { ignoreReturnCode: true });
-    await exec.exec(`git config --global --unset-all url.https://github.com/.insteadOf`, [], { ignoreReturnCode: true });
+    await exec.exec('git config --global --unset-all http.https://github.com/.extraheader', [], { ignoreReturnCode: true });
+    await exec.exec('git config --global --unset-all url.https://github.com/.insteadOf', [], { ignoreReturnCode: true });
 }
 async function gitClone(owner, repo, repoDir, flags) {
     const flagString = flags.join(' ');
@@ -11123,14 +11138,15 @@ async function gitClone(owner, repo, repoDir, flags) {
 async function gitFetch(gitDir) {
     await exec.exec(`git -c protocol.version=2 --git-dir ${gitDir} fetch --no-recurse-submodules origin`);
 }
-async function gitSubmoduleSyncUpload(config, repoDir, updateFlags) {
+async function gitSubmoduleUpdate(config, mirrorDir, repoDir) {
     const recursiveFlag = config.nestedSubmodules ? '--recursive' : '';
-    await exec.exec(`git submodule sync ${recursiveFlag}`, [], {
-        cwd: repoDir
-    });
-    const recursiveWithJobsFlag = config.nestedSubmodules ? '--recursive' : '';
-    const updateFlagString = updateFlags.join(' ');
-    await exec.exec(`git -c protocol.version=2 submodule update --init --force ${updateFlagString} ${recursiveWithJobsFlag}`, [], { cwd: repoDir });
+    const fetchDepthFlag = getFetchDepthFlag(config);
+    const dissociateFlag = config.dissociateSubmodules ? '--dissociate' : '';
+    await exec.exec(`nsc git-checkout submodule-update --mirror_base_path "${mirrorDir}" --repository_path="${repoDir}" ${recursiveFlag} ${fetchDepthFlag} ${dissociateFlag}`);
+}
+// Returns the --depth <depth> flag or an empty string if the full history should be fetched.
+function getFetchDepthFlag(config) {
+    return config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`;
 }
 
 
