@@ -48,7 +48,7 @@ inputs:
     description: >
       Whether to dissociate the checkout (and submodules, if any) from the Namespace Git mirror:
       `true` to dissociate the main checkout, `recursive` to dissociate the main checkout and
-      submodules (recursively).
+      all submodules.
     default: "false"
 
 runs:

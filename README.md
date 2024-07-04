@@ -50,7 +50,7 @@ steps:
       token: ''
 
       # Number of commits to fetch. 0 indicates all history for all branches and tags.
-      # Default: 1,
+      # Default: 1
       fetch-depth: ''
 
       # Relative path under $GITHUB_WORKSPACE to place the repository
