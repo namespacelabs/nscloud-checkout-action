@@ -342,7 +342,7 @@ async function gitSubmoduleUpdate(
   mirrorDir: string,
   repoDir: string
 ) {
-  const recursiveFlag = config.nestedSubmodules ? '--recursive' : ''
+  const recursiveFlag = config.nestedSubmodules ? '--recurse' : ''
   const fetchDepthFlag = getFetchDepthFlag(config)
   const dissociateFlag = config.dissociateSubmodules ? '--dissociate' : ''
   await exec.exec(
