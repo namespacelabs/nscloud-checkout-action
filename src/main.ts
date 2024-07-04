@@ -346,7 +346,7 @@ async function gitSubmoduleUpdate(
   const fetchDepthFlag = getFetchDepthFlag(config)
   const dissociateFlag = config.dissociateSubmodules ? '--dissociate' : ''
   await exec.exec(
-    `nsc git-checkout submodule-update --mirror_base_path "${mirrorDir}" --repository_path="${repoDir}" ${recursiveFlag} ${fetchDepthFlag} ${dissociateFlag}`
+    `nsc git-checkout update-submodules --mirror_base_path "${mirrorDir}" --repository_path "${repoDir}" ${recursiveFlag} ${fetchDepthFlag} ${dissociateFlag}`
   )
 }
 
