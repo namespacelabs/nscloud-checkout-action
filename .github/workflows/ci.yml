@@ -16,24 +16,44 @@ jobs:
     runs-on: [nscloud-ubuntu-22.04-staging-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
 
     steps:
-      - name: Github Checkout
+      - name: Github Checkout current
         uses: actions/checkout@v4
-      - name: Namespace Checkout
+      - name: Namespace Checkout Current
         uses: ./ # Uses an action in the root directory
         with:
-          path: nscloud
-          ref: main
-      - name: Compare main
+          path: nscloud-current
+      - name: Compare current
         run: |
-          if cmp --silent -- action.yml nscloud/action.yml; then
+          if cmp --silent -- action.yml nscloud-current/action.yml; then
             echo "files contents are identical"
           else
             echo "files differ:"
 
-            diff action.yml nscloud/action.yml
+            diff action.yml nscloud-current/action.yml
 
             exit 1
           fi
+
+      - name: Github Checkout main
+        uses: actions/checkout@v4
+        with:
+          path: github-main
+      - name: Namespace Checkout main
+        uses: ./ # Uses an action in the root directory
+        with:
+          path: nscloud-main
+      - name: Compare main
+        run: |
+          if cmp --silent -- github-main/action.yml nscloud-main/action.yml; then
+            echo "files contents are identical"
+          else
+            echo "files differ:"
+
+            diff github-main/action.yml nscloud-main/action.yml
+
+            exit 1
+          fi
+
       - uses: ruby/action-slack@v3.2.1
         with:
           payload: |
