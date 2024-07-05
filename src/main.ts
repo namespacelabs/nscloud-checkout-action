@@ -8,6 +8,9 @@ const version = 'v2'
 
 export async function run(): Promise<void> {
   try {
+    core.warning(
+      `nscloud-checkout-action@v2 does not support further checkout action calls in the same workflow. Upgrade to the latest version.`
+    )
     const config = parseInputConfig()
 
     const gitMirrorPath = process.env.NSC_GIT_MIRROR
