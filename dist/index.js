@@ -10912,7 +10912,7 @@ async function run() {
             throw new Error(`GitHub Runner workspace is not set GITHUB_WORKSPACE = ${workspacePath}.`);
         }
         // Set authentication
-        await configGitAuth(config.token);
+        await configGitGlobalAuth(config.token);
         // Prepare mirror if does not exist
         // Layout depends on version:
         // v1/ path was introduced with v1 tag because the way we cloned the mirror in v0 was not
@@ -10969,8 +10969,14 @@ async function run() {
         else {
             await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${commit}`);
         }
-        // Cleanup authentication config
-        await cleanupGitAuth();
+        if (config.persistCredentials) {
+            // Persist authentication in local
+            await configGitRepoLocalAuth(config.token, repoDir);
+            // Set auth for submodules
+            await configGitAuthForSubmodules(config.token, repoDir);
+        }
+        // Cleanup global authentication config
+        await cleanupGitGlobalAuth();
     }
     catch (error) {
         // Fail the workflow run if an error occurs
@@ -11041,6 +11047,14 @@ function parseInputConfig() {
     }
     core.debug(`dissociateMainRepo = ${result.dissociateMainRepo}`);
     core.debug(`dissociateSubmodules = ${result.dissociateSubmodules}`);
+    const persistCredentialsString = (core.getInput('persist-credentials') || '').toUpperCase();
+    if (persistCredentialsString === 'TRUE') {
+        result.persistCredentials = true;
+    }
+    else {
+        result.persistCredentials = false;
+    }
+    core.debug(`persistCredentials = ${result.persistCredentials}`);
     return result;
 }
 function getCheckoutInfo(ref, commit) {
@@ -11118,18 +11132,42 @@ function getFetchInfo(ref, commit) {
     }
     return result;
 }
-async function configGitAuth(token) {
+async function configGitAuthForSubmodules(token, repoDir) {
     // Set authentication
     const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
     core.setSecret(basicCredential);
-    // (NSL-2981) Remove previous extra auth header if any
-    await exec.exec('git config --global --unset-all http.https://github.com/.extraheader', [], { ignoreReturnCode: true });
-    await exec.exec(`git config --global --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`);
-    await exec.exec('git config --global --add url.https://github.com/.insteadOf git@github.com:');
+    await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ${basicCredential}'"`, [], { cwd: repoDir ? repoDir : undefined });
+    await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"`, [], { cwd: repoDir ? repoDir : undefined });
 }
-async function cleanupGitAuth() {
-    await exec.exec('git config --global --unset-all http.https://github.com/.extraheader', [], { ignoreReturnCode: true });
-    await exec.exec('git config --global --unset-all url.https://github.com/.insteadOf', [], { ignoreReturnCode: true });
+async function configGitGlobalAuth(token) {
+    configGitAuthImpl(token, true, '');
+}
+async function configGitRepoLocalAuth(token, repoDir) {
+    configGitAuthImpl(token, false, repoDir);
+}
+async function configGitAuthImpl(token, global, repoDir) {
+    // Set authentication
+    const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
+    core.setSecret(basicCredential);
+    var configSelector = '--local';
+    if (global) {
+        configSelector = '--global';
+    }
+    // (NSL-2981) Remove previous extra auth header if any
+    await exec.exec(`git config ${configSelector} --unset-all http.https://github.com/.extraheader`, [], { ignoreReturnCode: true, cwd: repoDir ? repoDir : undefined });
+    await exec.exec(`git config ${configSelector} --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`, [], { cwd: repoDir ? repoDir : undefined });
+    await exec.exec(`git config ${configSelector} --add url.https://github.com/.insteadOf git@github.com:`, [], { cwd: repoDir ? repoDir : undefined });
+}
+async function cleanupGitGlobalAuth() {
+    cleanupGitAuthImpl(true);
+}
+async function cleanupGitAuthImpl(global) {
+    var configSelector = '--local';
+    if (global) {
+        configSelector = '--global';
+    }
+    await exec.exec(`git config ${configSelector} --unset-all http.https://github.com/.extraheader`, [], { ignoreReturnCode: true });
+    await exec.exec(`git config ${configSelector} --unset-all url.https://github.com/.insteadOf`, [], { ignoreReturnCode: true });
 }
 async function gitClone(owner, repo, repoDir, flags) {
     const flagString = flags.join(' ');

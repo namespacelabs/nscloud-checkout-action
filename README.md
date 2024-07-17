@@ -61,7 +61,6 @@ steps:
       # Default: false
       submodules: ''
       
-      dissociate: ''
       # Dissociate the checkout (and optionally submodules, if any) from the mirror:
       # `true` to dissociate the main repository or 'recursive' to dissociate the main
       # repository and all submodules.
@@ -71,6 +70,11 @@ steps:
       # such as git status.
       #
       # Default: false
+      dissociate: ''
+
+      # Whether to configure the token or SSH key with the local git config
+      # Default: true
+      persist-credentials: ''
 ```
 
 ## Development

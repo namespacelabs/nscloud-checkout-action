@@ -30,6 +30,10 @@ inputs:
   fetch-depth:
     description: 'Number of commits to fetch. 0 indicates all history for all branches and tags.'
     default: "1"
+
+  persist-credentials:
+    description: 'Whether to configure the token or SSH key with the local git config'
+    default: "true"
   
   path:
     description: 'Relative path under $GITHUB_WORKSPACE to place the repository'
