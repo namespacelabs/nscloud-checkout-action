@@ -10912,7 +10912,7 @@ async function run() {
             throw new Error(`GitHub Runner workspace is not set GITHUB_WORKSPACE = ${workspacePath}.`);
         }
         // Set authentication
-        await configGitAuth(config.token, true, '');
+        await configGitGlobalAuth(config.token);
         // Prepare mirror if does not exist
         // Layout depends on version:
         // v1/ path was introduced with v1 tag because the way we cloned the mirror in v0 was not
@@ -10971,12 +10971,12 @@ async function run() {
         }
         if (config.persistCredentials) {
             // Persist authentication in local
-            await configGitAuth(config.token, false, repoDir);
+            await configGitRepoLocalAuth(config.token, repoDir);
             // Set auth for submodules
             await configGitAuthForSubmodules(config.token, repoDir);
         }
         // Cleanup global authentication config
-        await cleanupGitAuth(true);
+        await cleanupGitGlobalAuth();
     }
     catch (error) {
         // Fail the workflow run if an error occurs
@@ -11054,6 +11054,7 @@ function parseInputConfig() {
     else {
         result.persistCredentials = false;
     }
+    core.debug(`persistCredentials = ${result.persistCredentials}`);
     return result;
 }
 function getCheckoutInfo(ref, commit) {
@@ -11135,10 +11136,16 @@ async function configGitAuthForSubmodules(token, repoDir) {
     // Set authentication
     const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
     core.setSecret(basicCredential);
-    await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ${basicCredential}'"`, [], { cwd: repoDir });
-    await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"`, [], { cwd: repoDir });
+    await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ${basicCredential}'"`, [], { cwd: repoDir ? repoDir : undefined });
+    await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"`, [], { cwd: repoDir ? repoDir : undefined });
 }
-async function configGitAuth(token, global, repoDir) {
+async function configGitGlobalAuth(token) {
+    configGitAuthImpl(token, true, '');
+}
+async function configGitRepoLocalAuth(token, repoDir) {
+    configGitAuthImpl(token, false, repoDir);
+}
+async function configGitAuthImpl(token, global, repoDir) {
     // Set authentication
     const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
     core.setSecret(basicCredential);
@@ -11151,7 +11158,10 @@ async function configGitAuth(token, global, repoDir) {
     await exec.exec(`git config ${configSelector} --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`, [], { cwd: repoDir ? repoDir : undefined });
     await exec.exec(`git config ${configSelector} --add url.https://github.com/.insteadOf git@github.com:`, [], { cwd: repoDir ? repoDir : undefined });
 }
-async function cleanupGitAuth(global) {
+async function cleanupGitGlobalAuth() {
+    cleanupGitAuthImpl(true);
+}
+async function cleanupGitAuthImpl(global) {
     var configSelector = '--local';
     if (global) {
         configSelector = '--global';

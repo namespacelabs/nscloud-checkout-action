@@ -25,7 +25,7 @@ export async function run(): Promise<void> {
     }
 
     // Set authentication
-    await configGitAuth(config.token, true, '')
+    await configGitGlobalAuth(config.token)
 
     // Prepare mirror if does not exist
     // Layout depends on version:
@@ -103,13 +103,13 @@ export async function run(): Promise<void> {
 
     if (config.persistCredentials) {
       // Persist authentication in local
-      await configGitAuth(config.token, false, repoDir)
+      await configGitRepoLocalAuth(config.token, repoDir)
       // Set auth for submodules
       await configGitAuthForSubmodules(config.token, repoDir)
     }
 
     // Cleanup global authentication config
-    await cleanupGitAuth(true)
+    await cleanupGitGlobalAuth()
   } catch (error) {
     // Fail the workflow run if an error occurs
     if (error instanceof Error) core.setFailed(error.message)
@@ -208,6 +208,7 @@ function parseInputConfig(): IInputConfig {
   } else {
     result.persistCredentials = false
   }
+  core.debug(`persistCredentials = ${result.persistCredentials}`)
 
   return result
 }
@@ -312,16 +313,28 @@ async function configGitAuthForSubmodules(token: string, repoDir: string) {
   await exec.exec(
     `git submodule foreach --recursive sh -c "git config --local --add 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ${basicCredential}'"`,
     [],
-    { cwd: repoDir }
+    { cwd: repoDir ? repoDir : undefined }
   )
   await exec.exec(
     `git submodule foreach --recursive sh -c "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"`,
     [],
-    { cwd: repoDir }
+    { cwd: repoDir ? repoDir : undefined }
   )
 }
 
-async function configGitAuth(token: string, global: boolean, repoDir: string) {
+async function configGitGlobalAuth(token: string) {
+  configGitAuthImpl(token, true, '')
+}
+
+async function configGitRepoLocalAuth(token: string, repoDir: string) {
+  configGitAuthImpl(token, false, repoDir)
+}
+
+async function configGitAuthImpl(
+  token: string,
+  global: boolean,
+  repoDir: string
+) {
   // Set authentication
   const basicCredential = Buffer.from(
     `x-access-token:${token}`,
@@ -352,7 +365,11 @@ async function configGitAuth(token: string, global: boolean, repoDir: string) {
   )
 }
 
-async function cleanupGitAuth(global: boolean) {
+async function cleanupGitGlobalAuth() {
+  cleanupGitAuthImpl(true)
+}
+
+async function cleanupGitAuthImpl(global: boolean) {
   var configSelector = '--local'
   if (global) {
     configSelector = '--global'
