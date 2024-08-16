@@ -11180,7 +11180,8 @@ async function gitSubmoduleUpdate(config, mirrorDir, repoDir) {
     const recursiveFlag = config.nestedSubmodules ? '--recurse' : '';
     const fetchDepthFlag = getFetchDepthFlag(config);
     const dissociateFlag = config.dissociateSubmodules ? '--dissociate' : '';
-    await exec.exec(`nsc git-checkout update-submodules --mirror_base_path "${mirrorDir}" --repository_path "${repoDir}" ${recursiveFlag} ${fetchDepthFlag} ${dissociateFlag}`);
+    const debugFlag = core.isDebug() ? '--debug_to_console' : '';
+    await exec.exec(`nsc git-checkout update-submodules --mirror_base_path "${mirrorDir}" --repository_path "${repoDir}" ${recursiveFlag} ${fetchDepthFlag} ${dissociateFlag} ${debugFlag}`);
 }
 // Returns the --depth <depth> flag or an empty string if the full history should be fetched.
 function getFetchDepthFlag(config) {
