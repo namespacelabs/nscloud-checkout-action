@@ -10967,7 +10967,7 @@ async function run() {
             await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`);
         }
         else {
-            await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${commit}`);
+            await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${checkoutInfo.ref}`);
         }
         if (config.persistCredentials) {
             // Persist authentication in local
