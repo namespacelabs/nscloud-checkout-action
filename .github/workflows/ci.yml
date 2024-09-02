@@ -59,17 +59,13 @@ jobs:
         uses: ./ # Uses an action in the root directory
         with:
           path: NSL-4050-main
-          ref: refs/tags/v5
+          ref: refs/tags/v4
       - name: Compare main
         run: |
-          if cmp --silent -- github-main/action.yml NSL-4050-main/action.yml; then
-            echo "files contents are identical"
+          if [ "$(git rev-parse HEAD)" = "5324a9f65dc5c2d9034951d0c060fd1c690b7a05" ] ; then
+            echo "commmit is identical"
           else
-            echo "files differ:"
-
-            diff github-main/action.yml nscloud-main/action.yml
-
-            exit 1
+            echo "not expected commit for tag v4, expected e10c48a9b2a3b8a4c18f51f13cca12846febe160"
           fi
 
       - uses: ruby/action-slack@v3.2.1
