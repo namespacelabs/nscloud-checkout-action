@@ -62,7 +62,7 @@ jobs:
           ref: refs/tags/v4
       - name: Compare main
         run: |
-          if [ "$(git rev-parse HEAD)" = "e10c48a9b2a3b8a4c18f51f13cca12846febe160" ] ; then
+          if [ "$(git -C ./NSL-4050-main rev-parse HEAD)" = "e10c48a9b2a3b8a4c18f51f13cca12846febe160" ] ; then
             echo "commmit is identical"
           else
             echo "not expected commit for tag v4, expected e10c48a9b2a3b8a4c18f51f13cca12846febe160"
