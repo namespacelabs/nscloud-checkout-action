@@ -323,11 +323,11 @@ async function configGitAuthForSubmodules(token: string, repoDir: string) {
 }
 
 async function configGitGlobalAuth(token: string) {
-  configGitAuthImpl(token, true, '')
+  return await configGitAuthImpl(token, true, '')
 }
 
 async function configGitRepoLocalAuth(token: string, repoDir: string) {
-  configGitAuthImpl(token, false, repoDir)
+  return await configGitAuthImpl(token, false, repoDir)
 }
 
 async function configGitAuthImpl(

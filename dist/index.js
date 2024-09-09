@@ -11140,10 +11140,10 @@ async function configGitAuthForSubmodules(token, repoDir) {
     await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"`, [], { cwd: repoDir ? repoDir : undefined });
 }
 async function configGitGlobalAuth(token) {
-    configGitAuthImpl(token, true, '');
+    return await configGitAuthImpl(token, true, '');
 }
 async function configGitRepoLocalAuth(token, repoDir) {
-    configGitAuthImpl(token, false, repoDir);
+    return await configGitAuthImpl(token, false, repoDir);
 }
 async function configGitAuthImpl(token, global, repoDir) {
     // Set authentication
