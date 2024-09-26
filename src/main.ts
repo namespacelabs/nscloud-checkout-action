@@ -15,13 +15,13 @@ export async function run(): Promise<void> {
     if (!gitMirrorPath || !fs.existsSync(gitMirrorPath)) {
       let hint = `Please update your runs-on labels. E.g.:
       
-  runs-on:
-    - nscloud-ubuntu-22.04-amd64-8x16-with-cache
-    - nscloud-git-mirror-5gb`
+  \x1b[32mruns-on\x1b[34m:
+    - nscloud-ubuntu-22.04-amd64-8x16-\x1b[1mwith-cache
+    - nscloud-git-mirror-5gb\x1b[0m`
 
       if (process.env.NSC_RUNNER_PROFILE_INFO) {
         hint =
-          'Please enable Git repository checkouts in your runner profile cache settings.'
+          'Please enable \x1b[1mGit repository checkouts\x1b[21m in your runner profile cache settings.'
       }
 
       throw new Error(`nscloud-checkout-action requires Git caching to be enabled.
