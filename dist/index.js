@@ -33111,14 +33111,14 @@ async function run() {
         const gitMirrorPath = process.env.NSC_GIT_MIRROR;
         core.debug(`Git mirror path ${gitMirrorPath}`);
         if (!gitMirrorPath || !fs.existsSync(gitMirrorPath)) {
-            let hint = `Please update your runs-on labels. E.g.:
+            let hint = `Please update your \x1b[1mruns-on\x1b[0m labels. E.g.:
       
-  \x1b[32mruns-on\x1b[34m:
-    - nscloud-ubuntu-22.04-amd64-8x16-\x1b[1mwith-cache
-    - nscloud-git-mirror-5gb\x1b[0m`;
+  \x1b[32mruns-on\x1b[34m:\x1b[0m
+    - \x1b[34mnscloud-ubuntu-22.04-amd64-8x16-\x1b[1mwith-cache\x1b[0m
+    - \x1b[34m\x1b[1mnscloud-git-mirror-5gb\x1b[0m`;
             if (process.env.NSC_RUNNER_PROFILE_INFO) {
                 hint =
-                    'Please enable \x1b[1mGit repository checkouts\x1b[21m in your runner profile cache settings.';
+                    'Please enable \x1b[1mGit repository checkouts\x1b[0m in your runner profile cache settings.';
             }
             throw new Error(`nscloud-checkout-action requires Git caching to be enabled.
 
