@@ -1,4 +1,4 @@
-name: Force errors
+name: Prints errors
 
 on:
   workflow_dispatch:
@@ -12,6 +12,7 @@ jobs:
       - name: Github Checkout current
         uses: actions/checkout@v4
       - name: Namespace Checkout Current
+        continue-on-error: true
         uses: ./ # Uses an action in the root directory
         with:
           path: nscloud-current
@@ -24,6 +25,7 @@ jobs:
       - name: Github Checkout current
         uses: actions/checkout@v4
       - name: Namespace Checkout Current
+        continue-on-error: true
         uses: ./ # Uses an action in the root directory
         with:
           path: nscloud-current
