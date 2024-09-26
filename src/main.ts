@@ -1,8 +1,8 @@
 import * as core from '@actions/core'
 import * as github from '@actions/github'
 import * as exec from '@actions/exec'
-import * as fs from 'fs'
-import * as path from 'path'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 
 const version = 'v2'
 
@@ -13,7 +13,22 @@ export async function run(): Promise<void> {
     const gitMirrorPath = process.env.NSC_GIT_MIRROR
     core.debug(`Git mirror path ${gitMirrorPath}`)
     if (!gitMirrorPath || !fs.existsSync(gitMirrorPath)) {
-      throw new Error('Experimental git mirror feature must be enabled.')
+      let hint = `Please update your runs-on labels. E.g.:
+      
+  runs-on:
+    - nscloud-ubuntu-22.04-amd64-8x16-with-cache
+    - nscloud-git-mirror-5gb`
+
+      if (process.env.NSC_RUNNER_PROFILE_INFO) {
+        hint =
+          'Please enable Git repository checkouts in your runner profile cache settings.'
+      }
+
+      throw new Error(`nscloud-checkout-action requires Git caching to be enabled.
+
+${hint}
+
+See also https://namespace.so/docs/features/faster-github-actions#caching-git-repositories`)
     }
 
     const workspacePath = process.env.GITHUB_WORKSPACE
@@ -342,7 +357,7 @@ async function configGitAuthImpl(
   ).toString('base64')
   core.setSecret(basicCredential)
 
-  var configSelector = '--local'
+  let configSelector = '--local'
   if (global) {
     configSelector = '--global'
   }
@@ -370,7 +385,7 @@ async function cleanupGitGlobalAuth() {
 }
 
 async function cleanupGitAuthImpl(global: boolean) {
-  var configSelector = '--local'
+  let configSelector = '--local'
   if (global) {
     configSelector = '--global'
   }
