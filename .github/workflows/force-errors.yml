@@ -1,0 +1,29 @@
+name: Force errors
+
+on:
+  workflow_dispatch:
+
+jobs:
+  with-labels:
+    name: Labels do not configure Git mirror
+    runs-on: nscloud-ubuntu-22.04-amd64-2x4
+
+    steps:
+      - name: Github Checkout current
+        uses: actions/checkout@v4
+      - name: Namespace Checkout Current
+        uses: ./ # Uses an action in the root directory
+        with:
+          path: nscloud-current
+
+  with-profile:
+    name: Profile does not configure Git mirror
+    runs-on: namespace-profile-default
+
+    steps:
+      - name: Github Checkout current
+        uses: actions/checkout@v4
+      - name: Namespace Checkout Current
+        uses: ./ # Uses an action in the root directory
+        with:
+          path: nscloud-current
