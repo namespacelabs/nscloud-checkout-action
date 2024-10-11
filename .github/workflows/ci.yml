@@ -2,7 +2,7 @@ name: Continuous Integration
 
 on:
   schedule:
-    - cron: "*/15 * * * *" # Every 15 minutes
+    - cron: '*/15 * * * *' # Every 15 minutes
   pull_request:
   push:
     branches:
@@ -13,7 +13,7 @@ on:
 jobs:
   nscloud-runner:
     name: GitHub Actions Test on Nscloud Runner
-    runs-on: [nscloud-ubuntu-22.04-staging-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
 
     steps:
       - name: Github Checkout current
@@ -85,4 +85,3 @@ jobs:
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         if: failure()
-
