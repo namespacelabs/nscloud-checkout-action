@@ -77,11 +77,6 @@ See also https://namespace.so/docs/features/faster-github-actions#caching-git-re
       `${dissociateFlag}`
     ])
 
-    // Clone submodules in repo
-    if (config.submodules) {
-      await gitSubmoduleUpdate(config, gitMirrorPath, repoDir)
-    }
-
     // When ref is unspecified and for repositories different from the one where the workflow is running
     // resolve their default branch and use it as `ref`
     let ref = config.ref
@@ -114,6 +109,11 @@ See also https://namespace.so/docs/features/faster-github-actions#caching-git-re
       await exec.exec(
         `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${checkoutInfo.ref}`
       )
+    }
+
+    // Clone submodules in repo
+    if (config.submodules) {
+      await gitSubmoduleUpdate(config, gitMirrorPath, repoDir)
     }
 
     if (config.persistCredentials) {
