@@ -55,11 +55,22 @@ See also https://namespace.so/docs/features/faster-github-actions#caching-git-re
     )
     if (!fs.existsSync(mirrorDir)) {
       fs.mkdirSync(mirrorDir, { recursive: true })
-      await gitClone(config.owner, config.repo, mirrorDir, ['--mirror'])
+      await gitClone(
+        config.owner,
+        config.repo,
+        mirrorDir,
+        ['--mirror'],
+        !config.downloadGitLFS
+      )
     }
 
     // Fetch commits for mirror
     await gitFetch(mirrorDir)
+
+    // If Git LFS is required, download objects in cache
+    if (config.downloadGitLFS) {
+      await gitLFSFetch(mirrorDir, '', '')
+    }
 
     // Prepare repo dir
     let repoDir = workspacePath
@@ -71,11 +82,13 @@ See also https://namespace.so/docs/features/faster-github-actions#caching-git-re
     await exec.exec(`git config --global --add safe.directory ${repoDir}`)
     const fetchDepthFlag = getFetchDepthFlag(config)
     const dissociateFlag = config.dissociateMainRepo ? '--dissociate' : ''
-    await gitClone(config.owner, config.repo, repoDir, [
-      `--reference=${mirrorDir}`,
-      `${fetchDepthFlag}`,
-      `${dissociateFlag}`
-    ])
+    await gitClone(
+      config.owner,
+      config.repo,
+      repoDir,
+      [`--reference=${mirrorDir}`, `${fetchDepthFlag}`, `${dissociateFlag}`],
+      !config.downloadGitLFS
+    )
 
     // When ref is unspecified and for repositories different from the one where the workflow is running
     // resolve their default branch and use it as `ref`
@@ -116,6 +129,15 @@ See also https://namespace.so/docs/features/faster-github-actions#caching-git-re
       await gitSubmoduleUpdate(config, gitMirrorPath, repoDir)
     }
 
+    // If Git LFS is required, download objects. This should use the mirror cached LFS objects.
+    if (config.downloadGitLFS) {
+      await gitLFSFetch(
+        `${repoDir}/.git`,
+        repoDir,
+        checkoutInfo.startPoint || checkoutInfo.ref
+      )
+    }
+
     if (config.persistCredentials) {
       // Persist authentication in local
       await configGitRepoLocalAuth(config.token, repoDir)
@@ -145,6 +167,7 @@ interface IInputConfig {
   dissociateMainRepo: boolean
   dissociateSubmodules: boolean
   persistCredentials: boolean
+  downloadGitLFS: boolean
 }
 
 function parseInputConfig(): IInputConfig {
@@ -224,6 +247,15 @@ function parseInputConfig(): IInputConfig {
     result.persistCredentials = false
   }
   core.debug(`persistCredentials = ${result.persistCredentials}`)
+
+  // Download and cache Git LFS objects
+  const downloadGitLFS = (core.getInput('lfs') || '').toUpperCase()
+  if (downloadGitLFS === 'TRUE') {
+    result.downloadGitLFS = true
+  } else {
+    result.downloadGitLFS = false
+  }
+  core.debug(`persistCredentials = ${result.downloadGitLFS}`)
 
   return result
 }
@@ -406,11 +438,25 @@ async function gitClone(
   owner: string,
   repo: string,
   repoDir: string,
-  flags: string[]
+  flags: string[],
+  skipLFS: boolean
 ) {
+  // Copy over only the defined values from process.env
+  const cleanEnv: Record<string, string> = {}
+  Object.entries(process.env).forEach(([key, value]) => {
+    if (value !== undefined) {
+      cleanEnv[key] = value
+    }
+  })
+
+  // Git clone copies LFS objects from mirror if they exist by default. GIT_LFS_SKIP_SMUDGE=1 prevents that.
+  const envVars = skipLFS ? { ...cleanEnv, GIT_LFS_SKIP_SMUDGE: '1' } : cleanEnv
+
   const flagString = flags.join(' ')
   await exec.exec(
-    `git clone ${flagString} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`
+    `git clone ${flagString} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`,
+    [],
+    { env: envVars }
   )
 }
 
@@ -418,6 +464,18 @@ async function gitFetch(gitDir: string) {
   await exec.exec(
     `git -c protocol.version=2 --git-dir ${gitDir} fetch --no-recurse-submodules origin`
   )
+}
+
+async function gitLFSFetch(gitDir: string, repoDir: string, ref: string) {
+  var flags: string[] = []
+  if (gitDir) {
+    flags.push(`--git-dir ${gitDir}`)
+  }
+  if (repoDir) {
+    flags.push(`--work-tree ${repoDir}`)
+  }
+  const flagString = flags.join(' ')
+  await exec.exec(`git ${flagString} lfs fetch origin ${ref}`)
 }
 
 async function gitSubmoduleUpdate(

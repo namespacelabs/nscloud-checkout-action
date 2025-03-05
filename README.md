@@ -75,6 +75,10 @@ steps:
       # Whether to configure the token or SSH key with the local git config
       # Default: true
       persist-credentials: ''
+
+      # Whether to download and cache Git-LFS files
+      # Default: false
+      lfs: ''
 ```
 
 ## Development

@@ -54,6 +54,10 @@ inputs:
       `true` to dissociate the main checkout, `recursive` to dissociate the main checkout and
       all submodules.
     default: "false"
+  
+  lfs:
+    description: 'Whether to download and cache Git-LFS files'
+    default: "false"
 
 runs:
   using: node20
