@@ -14,7 +14,7 @@ Both Namespace Cache Volume and Git mirror must be enabled. Note the `-with-cach
 runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
 steps:
   - name: Checkout
-    uses: namespacelabs/nscloud-checkout-action@v5
+    uses: namespacelabs/nscloud-checkout-action@v6
 ```
 
 ### Supported input fields
@@ -23,7 +23,7 @@ steps:
 runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
 steps:
   - name: Checkout
-    uses: namespacelabs/nscloud-checkout-action@v5
+    uses: namespacelabs/nscloud-checkout-action@v6
     with:
       # Repository name with owner. For example, actions/checkout
       # Default: ${{ github.repository }}
