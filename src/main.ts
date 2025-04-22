@@ -113,7 +113,7 @@ See also https://namespace.so/docs/features/faster-github-actions#caching-git-re
     )
 
     // Checkout the ref
-    const checkoutInfo = getCheckoutInfo(ref, commit)
+    const checkoutInfo = await getCheckoutInfo(`${repoDir}/.git`, ref, commit)
     if (checkoutInfo.startPoint) {
       await exec.exec(
         `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`
@@ -265,7 +265,11 @@ interface ICheckoutInfo {
   startPoint: string
 }
 
-function getCheckoutInfo(ref: string, commit: string): ICheckoutInfo {
+async function getCheckoutInfo(
+  gitDir: string,
+  ref: string,
+  commit: string
+): Promise<ICheckoutInfo> {
   if (!ref && !commit) {
     throw new Error('Args ref and commit cannot both be empty')
   }
@@ -285,16 +289,29 @@ function getCheckoutInfo(ref: string, commit: string): ICheckoutInfo {
   }
   // refs/pull/
   else if (upperRef.startsWith('REFS/PULL/')) {
-    const prNumber = ref.split('/')[2]
-    if (prNumber) {
-      result.ref = `refs/pull/${prNumber}/head`
-    } else {
-      result.ref = ref
-    }
+    const branch = ref.substring('refs/pull/'.length)
+    result.ref = `refs/remotes/pull/${branch}`
   }
   // refs/tags/
-  else if (upperRef.startsWith('REFS/')) {
+  else if (upperRef.startsWith('REFS/TAGS/')) {
     result.ref = ref
+  }
+  // refs/
+  else if (upperRef.startsWith('REFS/')) {
+    result.ref = commit ? commit : ref
+  }
+  // Unqualified ref, check for a matching branch or tag
+  else {
+    if (await branchExists(gitDir, true, `origin/${ref}`)) {
+      result.ref = ref
+      result.startPoint = `refs/remotes/origin/${ref}`
+    } else if (await tagExists(gitDir, `${ref}`)) {
+      result.ref = `refs/tags/${ref}`
+    } else {
+      throw new Error(
+        `A branch or tag with the name '${ref}' could not be found`
+      )
+    }
   }
 
   return result
@@ -466,6 +483,38 @@ async function gitFetch(gitDir: string) {
   )
 }
 
+async function branchExists(
+  gitDir: string,
+  remote: boolean,
+  pattern: string
+): Promise<boolean> {
+  var flags: string[] = []
+  if (gitDir) {
+    flags.push(`--git-dir`, `${gitDir}`)
+  }
+
+  flags.push(`branch`, `--list`)
+  if (remote) {
+    flags.push(`--remote`)
+  }
+
+  flags.push(pattern)
+  const output = await execGit(flags)
+  return !!output.stdout.trim()
+}
+
+async function tagExists(gitDir: string, pattern: string): Promise<boolean> {
+  var flags: string[] = []
+  if (gitDir) {
+    flags.push(`--git-dir`, `${gitDir}`)
+  }
+
+  flags.push(`tag`, `--list`)
+  flags.push(pattern)
+  const output = await execGit(flags)
+  return !!output.stdout.trim()
+}
+
 async function gitLFSFetch(gitDir: string, repoDir: string, ref: string) {
   var flags: string[] = []
   if (gitDir) {
@@ -495,4 +544,32 @@ async function gitSubmoduleUpdate(
 // Returns the --depth <depth> flag or an empty string if the full history should be fetched.
 function getFetchDepthFlag(config: IInputConfig) {
   return config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`
+}
+
+class GitOutput {
+  stdout = ''
+  exitCode = 0
+}
+
+async function execGit(args: string[]): Promise<GitOutput> {
+  const result = new GitOutput()
+
+  const defaultListener = {
+    stdout: (data: Buffer) => {
+      stdout.push(data.toString())
+    }
+  }
+
+  const stdout: string[] = []
+  const options = {
+    listeners: defaultListener
+  }
+
+  result.exitCode = await exec.exec(`git`, args, options)
+  result.stdout = stdout.join('')
+
+  core.debug(result.exitCode.toString())
+  core.debug(result.stdout)
+
+  return result
 }
