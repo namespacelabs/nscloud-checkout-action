@@ -10971,7 +10971,7 @@ See also https://namespace.so/docs/features/faster-github-actions#caching-git-re
         const fetchInfo = getFetchInfo(ref, commit);
         await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`);
         // Checkout the ref
-        const checkoutInfo = getCheckoutInfo(ref, commit);
+        const checkoutInfo = await getCheckoutInfo(`${repoDir}/.git`, ref, commit);
         if (checkoutInfo.startPoint) {
             await exec.exec(`git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`);
         }
@@ -11083,7 +11083,7 @@ function parseInputConfig() {
     core.debug(`persistCredentials = ${result.downloadGitLFS}`);
     return result;
 }
-function getCheckoutInfo(ref, commit) {
+async function getCheckoutInfo(gitDir, ref, commit) {
     if (!ref && !commit) {
         throw new Error('Args ref and commit cannot both be empty');
     }
@@ -11101,17 +11101,29 @@ function getCheckoutInfo(ref, commit) {
     }
     // refs/pull/
     else if (upperRef.startsWith('REFS/PULL/')) {
-        const prNumber = ref.split('/')[2];
-        if (prNumber) {
-            result.ref = `refs/pull/${prNumber}/head`;
-        }
-        else {
-            result.ref = ref;
-        }
+        const branch = ref.substring('refs/pull/'.length);
+        result.ref = `refs/remotes/pull/${branch}`;
     }
     // refs/tags/
-    else if (upperRef.startsWith('REFS/')) {
+    else if (upperRef.startsWith('REFS/TAGS/')) {
         result.ref = ref;
+    }
+    // refs/
+    else if (upperRef.startsWith('REFS/')) {
+        result.ref = commit ? commit : ref;
+    }
+    // Unqualified ref, check for a matching branch or tag
+    else {
+        if (await branchExists(gitDir, true, `origin/${ref}`)) {
+            result.ref = ref;
+            result.startPoint = `refs/remotes/origin/${ref}`;
+        }
+        else if (await tagExists(gitDir, `${ref}`)) {
+            result.ref = `refs/tags/${ref}`;
+        }
+        else {
+            throw new Error(`A branch or tag with the name '${ref}' could not be found`);
+        }
     }
     return result;
 }
@@ -11211,6 +11223,29 @@ async function gitClone(owner, repo, repoDir, flags, skipLFS) {
 async function gitFetch(gitDir) {
     await exec.exec(`git -c protocol.version=2 --git-dir ${gitDir} fetch --no-recurse-submodules origin`);
 }
+async function branchExists(gitDir, remote, pattern) {
+    var flags = [];
+    if (gitDir) {
+        flags.push(`--git-dir`, `${gitDir}`);
+    }
+    flags.push(`branch`, `--list`);
+    if (remote) {
+        flags.push(`--remote`);
+    }
+    flags.push(pattern);
+    const output = await execGit(flags);
+    return !!output.stdout.trim();
+}
+async function tagExists(gitDir, pattern) {
+    var flags = [];
+    if (gitDir) {
+        flags.push(`--git-dir`, `${gitDir}`);
+    }
+    flags.push(`tag`, `--list`);
+    flags.push(pattern);
+    const output = await execGit(flags);
+    return !!output.stdout.trim();
+}
 async function gitLFSFetch(gitDir, repoDir, ref) {
     var flags = [];
     if (gitDir) {
@@ -11232,6 +11267,27 @@ async function gitSubmoduleUpdate(config, mirrorDir, repoDir) {
 // Returns the --depth <depth> flag or an empty string if the full history should be fetched.
 function getFetchDepthFlag(config) {
     return config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`;
+}
+class GitOutput {
+    stdout = '';
+    exitCode = 0;
+}
+async function execGit(args) {
+    const result = new GitOutput();
+    const defaultListener = {
+        stdout: (data) => {
+            stdout.push(data.toString());
+        }
+    };
+    const stdout = [];
+    const options = {
+        listeners: defaultListener
+    };
+    result.exitCode = await exec.exec(`git`, args, options);
+    result.stdout = stdout.join('');
+    core.debug(result.exitCode.toString());
+    core.debug(result.stdout);
+    return result;
 }
 
 
