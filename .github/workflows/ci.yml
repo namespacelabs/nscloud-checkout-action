@@ -1,8 +1,6 @@
 name: Continuous Integration
 
 on:
-  schedule:
-    - cron: '*/15 * * * *' # Every 15 minutes
   pull_request:
   push:
     branches:
@@ -68,6 +66,69 @@ jobs:
             echo "not expected commit for tag v4, expected e10c48a9b2a3b8a4c18f51f13cca12846febe160"
             exit 1
           fi
+
+      - name: Basic checkout tests
+        uses: ./
+        with: 
+          ref: test-data/v2/basic
+          path: basic
+      - name: Verify basic
+        shell: bash
+        run: .github/tests/verify-basic.sh
+
+      - name: Checkout side by side 1
+        uses: ./
+        with:
+          ref: test-data/v2/side-by-side-1
+          path: side-by-side-1
+      - name: Checkout side by side 2
+        uses: ./
+        with:
+          ref: test-data/v2/side-by-side-2
+          path: side-by-side-2
+      - name: Verify side by side
+        shell: bash
+        run: .github/tests/verify-side-by-side.sh
+
+      - name: Checkout LFS
+        uses: ./
+        with:
+          repository: namespacelabs/nscloud-checkout-action # hardcoded, otherwise doesn't work from a fork
+          ref: test-data/v2/lfs
+          path: lfs
+          lfs: true
+      - name: Verify LFS
+        shell: bash
+        run: .github/tests/verify-lfs.sh
+
+      # Submodules false
+      - name: Checkout submodules false
+        uses: ./
+        with:
+          ref: test-data/v2/submodule-ssh-url
+          path: submodules-false
+      - name: Verify submodules false
+        run: .github/tests/verify-submodules-false.sh
+
+      # Submodules one level
+      - name: Checkout submodules true
+        uses: ./
+        with:
+          ref: test-data/v2/submodule-ssh-url
+          path: submodules-true
+          submodules: true
+      - name: Verify submodules true
+        run: .github/tests/verify-submodules-true.sh
+
+      # Submodules recursive
+      - name: Checkout submodules recursive
+        uses: ./
+        with:
+          ref: test-data/v2/submodule-ssh-url
+          path: submodules-recursive
+          submodules: recursive
+      - name: Verify submodules recursive
+        run: .github/tests/verify-submodules-recursive.sh
 
       - uses: ruby/action-slack@v3.2.1
         with:
