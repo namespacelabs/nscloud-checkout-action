@@ -11101,8 +11101,13 @@ async function getCheckoutInfo(gitDir, ref, commit) {
     }
     // refs/pull/
     else if (upperRef.startsWith('REFS/PULL/')) {
-        const branch = ref.substring('refs/pull/'.length);
-        result.ref = `refs/remotes/pull/${branch}`;
+        const prNumber = ref.split('/')[2];
+        if (prNumber) {
+            result.ref = `refs/pull/${prNumber}/head`;
+        }
+        else {
+            result.ref = ref;
+        }
     }
     // refs/tags/
     else if (upperRef.startsWith('REFS/TAGS/')) {
