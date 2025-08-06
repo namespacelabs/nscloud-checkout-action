@@ -1,4 +1,4 @@
-# Namespace Cloud optimized Checkout Action
+# Namespace optimized Checkout Action
 
 This action is a specialized and optimized version of [`actions/checkout`](https://github.com/actions/checkout) for Namespace Runners.
 It expects to run in a Namespace Runner and it will fail for otherwise. It also expects that the _git mirror_ feature is enabled in
