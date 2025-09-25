@@ -28,7 +28,7 @@ export async function run(): Promise<void> {
 
 ${hint}
 
-See also https://namespace.so/docs/features/faster-github-actions#caching-git-repositories`)
+See also https://namespace.so/docs/solutions/github-actions/caching#git-checkouts`)
     }
 
     const workspacePath = process.env.GITHUB_WORKSPACE
