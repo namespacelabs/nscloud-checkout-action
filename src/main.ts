@@ -86,7 +86,12 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
       config.owner,
       config.repo,
       repoDir,
-      [`--reference=${mirrorDir}`, `${fetchDepthFlag}`, `${dissociateFlag}`],
+      [
+        `--reference=${mirrorDir}`,
+        `${fetchDepthFlag}`,
+        `${dissociateFlag}`,
+        `--no-single-branch` /*NSL-6774*/
+      ],
       !config.downloadGitLFS
     )
 
@@ -289,12 +294,8 @@ async function getCheckoutInfo(
   }
   // refs/pull/
   else if (upperRef.startsWith('REFS/PULL/')) {
-    const prNumber = ref.split('/')[2]
-    if (prNumber) {
-      result.ref = `refs/pull/${prNumber}/head`
-    } else {
-      result.ref = ref
-    }
+    const branch = ref.substring('refs/pull/'.length)
+    result.ref = `refs/remotes/pull/${branch}`
   }
   // refs/tags/
   else if (upperRef.startsWith('REFS/TAGS/')) {
@@ -343,21 +344,25 @@ function getFetchInfo(ref: string, commit: string): IFetchInfo {
     if (commit) {
       result.ref = `+${commit}:refs/remotes/origin/${branch}`
     } else {
-      result.ref = `${branch}`
+      result.ref = `+${ref}:refs/remotes/origin/${branch}`
     }
   }
   // refs/pull/
   else if (upperRef.startsWith('REFS/PULL/')) {
-    const prNumber = ref.split('/')[2]
-    if (prNumber) {
-      result.ref = `+${commit}:refs/pull/${prNumber}/head`
+    const branch = ref.substring('refs/pull/'.length)
+    if (commit) {
+      result.ref = `+${commit}:refs/remotes/pull/${branch}`
     } else {
-      result.ref = ref
+      result.ref = `+${ref}:refs/remotes/pull/${branch}`
     }
   }
   // refs/tags/
   else if (upperRef.startsWith('REFS/')) {
-    result.ref = ref
+    if (commit) {
+      result.ref = `+${commit}:${ref}`
+    } else {
+      result.ref = `+${ref}:${ref}`
+    }
   }
   // Unqualified ref, check for a matching branch or tag
   else if (!upperRef.startsWith('REFS/')) {
