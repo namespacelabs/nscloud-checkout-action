@@ -6,7 +6,7 @@ import * as path from 'node:path'
 
 const version = 'v2'
 
-export async function run(): Promise<void> {
+export async function main(): Promise<void> {
   try {
     const config = parseInputConfig()
 
@@ -20,8 +20,7 @@ export async function run(): Promise<void> {
     - \x1b[34m\x1b[1mnscloud-git-mirror-5gb\x1b[0m`
 
       if (process.env.NSC_RUNNER_PROFILE_INFO) {
-        hint =
-          'Please enable \x1b[1mGit repository checkouts\x1b[0m in your runner profile cache settings.'
+        hint = 'Please enable \x1b[1mGit repository checkouts\x1b[0m in your runner profile cache settings.'
       }
 
       throw new Error(`nscloud-checkout-action requires Git caching to be enabled.
@@ -34,14 +33,15 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     const workspacePath = process.env.GITHUB_WORKSPACE
     core.debug(`Workspace path ${workspacePath}`)
     if (!workspacePath || !fs.existsSync(workspacePath)) {
-      throw new Error(
-        `GitHub Runner workspace is not set GITHUB_WORKSPACE = ${workspacePath}.`
-      )
+      throw new Error(`GitHub Runner workspace is not set GITHUB_WORKSPACE = ${workspacePath}.`)
     }
 
+    core.startGroup('Set up Git configuration')
     // Set authentication
-    await configGitGlobalAuth(config.token)
+    await configGitAuth(config.token, { global: true })
+    core.endGroup()
 
+    core.startGroup('Update checkout cache')
     // Prepare mirror if does not exist
     // Layout depends on version:
     // v1/ path was introduced with v1 tag because the way we cloned the mirror in v0 was not
@@ -49,28 +49,25 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     // v2/ path was introduced to fix a bug in the way a shallow mirror repo worked when referenced by a cloned
     // repo with submodules, in that case caching did not happen, so we restore in v2 the mirror repo as is used to be in v0
     // and not attempt to cache also recursive submodules.
-    const mirrorDir = path.join(
-      gitMirrorPath,
-      `${version}/${config.owner}-${config.repo}`
-    )
+    const remoteURL = `https://token@github.com/${config.owner}/${config.repo}.git`
+    const mirrorDir = path.join(gitMirrorPath, `${version}/${config.owner}-${config.repo}`)
     if (!fs.existsSync(mirrorDir)) {
       fs.mkdirSync(mirrorDir, { recursive: true })
-      await gitClone(
-        config.owner,
-        config.repo,
-        mirrorDir,
-        ['--mirror'],
-        !config.downloadGitLFS
-      )
+      await exec.exec('git', ['clone', '--mirror', '--', remoteURL, mirrorDir])
     }
 
     // Fetch commits for mirror
-    await gitFetch(mirrorDir)
+    await exec.exec('git', ['-c', 'protocol.version=2', '--git-dir', mirrorDir, 'fetch', '--no-recurse-submodules', 'origin'])
 
     // If Git LFS is required, download objects in cache
     if (config.downloadGitLFS) {
-      await gitLFSFetch(mirrorDir, '', '')
+      await exec.exec('git', ['--git-dir', mirrorDir, 'lfs', 'fetch', 'origin'])
     }
+    core.endGroup()
+
+    core.startGroup('Fetch using the cache')
+    // Resolve references.
+    const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir)
 
     // Prepare repo dir
     let repoDir = workspacePath
@@ -78,80 +75,71 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
       repoDir = path.join(workspacePath, config.targetPath)
     }
 
-    // Clone the repo
+    // Clone the repo.
+    // We don't use git-clone to have full control over the configuration of remote
+    // and what we are fetching from the remote vs the mirror (see NSL-6774, NSL-6725, NSL-6825).
+    await exec.exec('git', ['-c', 'advice.defaultBranchName=false', 'init', repoDir])
     await exec.exec(`git config --global --add safe.directory ${repoDir}`)
-    const fetchDepthFlag = getFetchDepthFlag(config)
-    const dissociateFlag = config.dissociateMainRepo ? '--dissociate' : ''
-    await gitClone(
-      config.owner,
-      config.repo,
-      repoDir,
-      [
-        `--reference=${mirrorDir}`,
-        `${fetchDepthFlag}`,
-        `${dissociateFlag}`,
-        `--no-single-branch` /*NSL-6774*/
-      ],
-      !config.downloadGitLFS
+
+    const gitRepoFlags = ['--git-dir', `${repoDir}/.git`, '--work-tree', repoDir]
+    await exec.exec('git', [...gitRepoFlags, 'remote', 'add', 'origin', remoteURL])
+
+    // Fetch the refs
+    const fetchDepthFlags = config.fetchDepth <= 0 ? [] : ['--depth', config.fetchDepth.toString(), '--no-tags']
+    const referenceEnv = {
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(mirrorDir, 'objects')
+    }
+    await execEnv(
+      'git',
+      [...gitRepoFlags, 'fetch', '-v', '--prune', '--progress', '--no-recurse-submodules', ...fetchDepthFlags, 'origin', ...checkoutInfo.fetchRefs],
+      { env: referenceEnv }
     )
-
-    // When ref is unspecified and for repositories different from the one where the workflow is running
-    // resolve their default branch and use it as `ref`
-    let ref = config.ref
-    const commit = config.commit
-    if (!ref && !config.isWorkflowRepository) {
-      const output = await exec.getExecOutput(
-        `git --git-dir ${repoDir}/.git --work-tree ${repoDir} symbolic-ref refs/remotes/origin/HEAD --short`
-      )
-      for (let line of output.stdout.trim().split('\n')) {
-        line = line.trim()
-        if (line.startsWith('origin/')) {
-          ref = `refs/heads/${line.split('/')[1].trim()}`
-        }
-      }
-    }
-
-    // Fetch the ref
-    const fetchInfo = getFetchInfo(ref, commit)
-    await exec.exec(
-      `git --git-dir ${repoDir}/.git --work-tree ${repoDir} fetch -v --prune --no-recurse-submodules origin ${fetchInfo.ref}`
-    )
-
-    // Checkout the ref
-    const checkoutInfo = await getCheckoutInfo(`${repoDir}/.git`, ref, commit)
-    if (checkoutInfo.startPoint) {
-      await exec.exec(
-        `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force -B ${checkoutInfo.ref} ${checkoutInfo.startPoint}`
-      )
-    } else {
-      await exec.exec(
-        `git --git-dir ${repoDir}/.git --work-tree ${repoDir} checkout --progress --force ${checkoutInfo.ref}`
-      )
-    }
-
-    // Clone submodules in repo
-    if (config.submodules) {
-      await gitSubmoduleUpdate(config, gitMirrorPath, repoDir)
-    }
+    core.endGroup()
 
     // If Git LFS is required, download objects. This should use the mirror cached LFS objects.
     if (config.downloadGitLFS) {
-      await gitLFSFetch(
-        `${repoDir}/.git`,
-        repoDir,
-        checkoutInfo.startPoint || checkoutInfo.ref
-      )
+      core.startGroup('Fetch LFS resources')
+      await exec.exec('git', [...gitRepoFlags, 'lfs', 'fetch', 'origin', checkoutInfo.pointerRef], { env: referenceEnv })
+      core.endGroup()
     }
 
+    // Write the configuration to use the mirror always.
+    if (config.dissociateMainRepo) {
+      core.startGroup(`Dissociate checkout from cache`)
+      await exec.exec('git', [...gitRepoFlags, 'repack', '-a', '-d'], { env: referenceEnv })
+      core.endGroup()
+    } else {
+      const alternatesPath = path.join(repoDir, '.git/objects/info/alternates')
+      fs.writeFileSync(alternatesPath, path.join(mirrorDir, 'objects'))
+    }
+
+    core.startGroup(`Check out ${checkoutInfo.pointerRef}`)
+    // Checkout the ref
+    const smudgeEnv = { GIT_LFS_SKIP_SMUDGE: config.downloadGitLFS ? '0' : '1' }
+    const startBranchFlags = checkoutInfo.startBranch ? ['-B', checkoutInfo.startBranch] : []
+    await execEnv('git', [...gitRepoFlags, 'checkout', '--progress', '--force', ...startBranchFlags, checkoutInfo.pointerRef], {
+      env: { ...smudgeEnv, ...referenceEnv }
+    })
+    core.endGroup()
+
+    // Clone submodules in repo
+    if (config.submodules) {
+      core.startGroup('Update submodules')
+      await gitSubmoduleUpdate(config, gitMirrorPath, repoDir)
+      core.endGroup()
+    }
+
+    core.startGroup('Reset Git authentication')
     if (config.persistCredentials) {
       // Persist authentication in local
-      await configGitRepoLocalAuth(config.token, repoDir)
+      await configGitAuth(config.token, { repoDir })
       // Set auth for submodules
       await configGitAuthForSubmodules(config.token, repoDir)
     }
 
     // Cleanup global authentication config
-    await cleanupGitGlobalAuth()
+    await cleanupGitAuth({ global: true })
+    core.endGroup()
   } catch (error) {
     // Fail the workflow run if an error occurs
     if (error instanceof Error) core.setFailed(error.message)
@@ -185,12 +173,10 @@ function parseInputConfig(): IInputConfig {
   result.repo = splitRepo[1]
 
   // Workflow repository?
-  result.isWorkflowRepository =
-    ownerRepo.toUpperCase() ===
-    `${github.context.repo.owner}/${github.context.repo.repo}`.toUpperCase()
+  result.isWorkflowRepository = ownerRepo.toUpperCase() === `${github.context.repo.owner}/${github.context.repo.repo}`.toUpperCase()
 
   result.ref = core.getInput('ref')
-  result.commit = ''
+  result.commit = core.getInput('commit') // hidden input for testing
   if (!result.ref) {
     if (result.isWorkflowRepository) {
       result.ref = github.context.ref
@@ -243,9 +229,7 @@ function parseInputConfig(): IInputConfig {
   core.debug(`dissociateMainRepo = ${result.dissociateMainRepo}`)
   core.debug(`dissociateSubmodules = ${result.dissociateSubmodules}`)
 
-  const persistCredentialsString = (
-    core.getInput('persist-credentials') || ''
-  ).toUpperCase()
+  const persistCredentialsString = (core.getInput('persist-credentials') || '').toUpperCase()
   if (persistCredentialsString === 'TRUE') {
     result.persistCredentials = true
   } else {
@@ -266,121 +250,86 @@ function parseInputConfig(): IInputConfig {
 }
 
 interface ICheckoutInfo {
-  ref: string
-  startPoint: string
+  originalRef: string // that's how the remote calls the target (e.g. refs/heads/xxx).
+  pointerRef: string // that's how we will call the fetched ref (e.g. refs/remotes/origin/xxx).
+  startBranch?: string // that's how we will call the branch we create to track remoteRef
+  fetchRefs: string[]
 }
 
-async function getCheckoutInfo(
-  gitDir: string,
-  ref: string,
-  commit: string
-): Promise<ICheckoutInfo> {
+async function getCheckoutInfo(ref: string, commit: string, depth: number, mirrorDir: string): Promise<ICheckoutInfo> {
+  // Nothing specified => find the default branch and use it as `ref`.
   if (!ref && !commit) {
-    throw new Error('Args ref and commit cannot both be empty')
+    core.debug('No ref or commit => determine default branch')
+    // Luckily we have a faithful mirror of the remote locally, just resolve its HEAD.
+    const output = await exec.getExecOutput('git', ['--git-dir', mirrorDir, 'symbolic-ref', '--quiet', 'HEAD'])
+    ref = output.stdout.trim()
+    core.debug(`Detected default branch ${ref}`)
   }
 
-  const result = {} as unknown as ICheckoutInfo
-  const upperRef = (ref || '').toUpperCase()
-
-  // SHA only
-  if (!ref) {
-    result.ref = commit
+  // Unqualified ref => resolve using normal Git rules.
+  if (ref && !ref.toUpperCase().startsWith('REFS/')) {
+    core.debug('Unqualified ref => resolve')
+    const output = await exec.getExecOutput('git', ['--git-dir', mirrorDir, 'rev-parse', '--verify', '--symbolic-full-name', ref])
+    ref = output.stdout.trim()
+    core.debug(`Detected fully-qualified ref ${ref}`)
   }
+
+  const result = {} as ICheckoutInfo
+
   // refs/heads/
-  else if (upperRef.startsWith('REFS/HEADS/')) {
+  const upperRef = ref.toUpperCase()
+  if (upperRef.startsWith('REFS/HEADS/')) {
+    core.debug('Processing branch ref')
     const branch = ref.substring('refs/heads/'.length)
-    result.ref = branch
-    result.startPoint = `refs/remotes/origin/${branch}`
+    result.originalRef = ref
+    result.pointerRef = `refs/remotes/origin/${branch}`
+    result.startBranch = branch
   }
   // refs/pull/
   else if (upperRef.startsWith('REFS/PULL/')) {
+    core.debug('Processing pull ref')
     const branch = ref.substring('refs/pull/'.length)
-    result.ref = `refs/remotes/pull/${branch}`
+    result.originalRef = ref
+    result.pointerRef = `refs/remotes/pull/${branch}`
   }
-  // refs/tags/
-  else if (upperRef.startsWith('REFS/TAGS/')) {
-    result.ref = ref
+  // all other, mostly tags - mirror
+  else if (ref) {
+    core.debug('Processing generic ref')
+    result.originalRef = ref
+    result.pointerRef = ref
   }
-  // refs/
-  else if (upperRef.startsWith('REFS/')) {
-    result.ref = commit ? commit : ref
-  }
-  // Unqualified ref, check for a matching branch or tag
+  // no ref, only commit
   else {
-    if (await branchExists(gitDir, true, `origin/${ref}`)) {
-      result.ref = ref
-      result.startPoint = `refs/remotes/origin/${ref}`
-    } else if (await tagExists(gitDir, `${ref}`)) {
-      result.ref = `refs/tags/${ref}`
+    core.debug('Processing commit without ref')
+    result.originalRef = commit
+    result.pointerRef = commit
+  }
+
+  if (depth > 0) {
+    // Only fetch the requested ref
+    if (ref) {
+      result.fetchRefs = [`+${commit || ref}:${result.pointerRef}`]
     } else {
-      throw new Error(
-        `A branch or tag with the name '${ref}' could not be found`
-      )
+      result.fetchRefs = [commit]
+    }
+  } else {
+    result.fetchRefs = ['+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*']
+    if (ref && !upperRef.startsWith('REFS/HEADS/') && !upperRef.startsWith('REFS/TAGS/')) {
+      result.fetchRefs.push(`+${commit || ref}:${result.pointerRef}`)
     }
   }
 
-  return result
-}
-
-interface IFetchInfo {
-  ref: string
-}
-
-function getFetchInfo(ref: string, commit: string): IFetchInfo {
-  if (!ref && !commit) {
-    throw new Error('Args ref and commit cannot both be empty')
-  }
-
-  const result = {} as unknown as ICheckoutInfo
-  const upperRef = (ref || '').toUpperCase()
-
-  // SHA only
-  if (!ref) {
-    result.ref = commit
-  }
-  // refs/heads/
-  else if (upperRef.startsWith('REFS/HEADS/')) {
-    const branch = ref.substring('refs/heads/'.length)
-    if (commit) {
-      result.ref = `+${commit}:refs/remotes/origin/${branch}`
-    } else {
-      result.ref = `+${ref}:refs/remotes/origin/${branch}`
-    }
-  }
-  // refs/pull/
-  else if (upperRef.startsWith('REFS/PULL/')) {
-    const branch = ref.substring('refs/pull/'.length)
-    if (commit) {
-      result.ref = `+${commit}:refs/remotes/pull/${branch}`
-    } else {
-      result.ref = `+${ref}:refs/remotes/pull/${branch}`
-    }
-  }
-  // refs/tags/
-  else if (upperRef.startsWith('REFS/')) {
-    if (commit) {
-      result.ref = `+${commit}:${ref}`
-    } else {
-      result.ref = `+${ref}:${ref}`
-    }
-  }
-  // Unqualified ref, check for a matching branch or tag
-  else if (!upperRef.startsWith('REFS/')) {
-    result.ref = [
-      `+refs/heads/${ref}*:refs/remotes/origin/${ref}*`,
-      `+refs/tags/${ref}*:refs/tags/${ref}*`
-    ].join(' ')
-  }
+  core.debug(`originalRef = ${result.originalRef}`)
+  core.debug(`pointerRef = ${result.pointerRef}`)
+  core.debug(`startBranch = ${result.startBranch}`)
+  core.debug(`fetchRefs = ${result.fetchRefs}`)
 
   return result
 }
 
 async function configGitAuthForSubmodules(token: string, repoDir: string) {
   // Set authentication
-  const basicCredential = Buffer.from(
-    `x-access-token:${token}`,
-    'utf8'
-  ).toString('base64')
+  const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64')
   core.setSecret(basicCredential)
 
   await exec.exec(
@@ -388,197 +337,59 @@ async function configGitAuthForSubmodules(token: string, repoDir: string) {
     [],
     { cwd: repoDir ? repoDir : undefined }
   )
-  await exec.exec(
-    `git submodule foreach --recursive sh -c "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"`,
-    [],
-    { cwd: repoDir ? repoDir : undefined }
-  )
+  await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"`, [], {
+    cwd: repoDir ? repoDir : undefined
+  })
 }
 
-async function configGitGlobalAuth(token: string) {
-  return await configGitAuthImpl(token, true, '')
-}
-
-async function configGitRepoLocalAuth(token: string, repoDir: string) {
-  return await configGitAuthImpl(token, false, repoDir)
-}
-
-async function configGitAuthImpl(
-  token: string,
-  global: boolean,
-  repoDir: string
-) {
+async function configGitAuth(token: string, opts: { global: true } | { repoDir: string }) {
   // Set authentication
-  const basicCredential = Buffer.from(
-    `x-access-token:${token}`,
-    'utf8'
-  ).toString('base64')
+  const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64')
   core.setSecret(basicCredential)
 
-  let configSelector = '--local'
-  if (global) {
-    configSelector = '--global'
-  }
+  let configSelector = 'global' in opts && opts.global ? '--global' : '--local'
+  const cwd = 'repoDir' in opts ? opts.repoDir : undefined
 
   // (NSL-2981) Remove previous extra auth header if any
-  await exec.exec(
-    `git config ${configSelector} --unset-all http.https://github.com/.extraheader`,
-    [],
-    { ignoreReturnCode: true, cwd: repoDir ? repoDir : undefined }
-  )
-  await exec.exec(
-    `git config ${configSelector} --add http.https://github.com/.extraheader "AUTHORIZATION: basic ${basicCredential}"`,
-    [],
-    { cwd: repoDir ? repoDir : undefined }
-  )
-  await exec.exec(
-    `git config ${configSelector} --add url.https://github.com/.insteadOf git@github.com:`,
-    [],
-    { cwd: repoDir ? repoDir : undefined }
-  )
-}
-
-async function cleanupGitGlobalAuth() {
-  cleanupGitAuthImpl(true)
-}
-
-async function cleanupGitAuthImpl(global: boolean) {
-  let configSelector = '--local'
-  if (global) {
-    configSelector = '--global'
-  }
-
-  await exec.exec(
-    `git config ${configSelector} --unset-all http.https://github.com/.extraheader`,
-    [],
-    { ignoreReturnCode: true }
-  )
-  await exec.exec(
-    `git config ${configSelector} --unset-all url.https://github.com/.insteadOf`,
-    [],
-    { ignoreReturnCode: true }
-  )
-}
-
-async function gitClone(
-  owner: string,
-  repo: string,
-  repoDir: string,
-  flags: string[],
-  skipLFS: boolean
-) {
-  // Copy over only the defined values from process.env
-  const cleanEnv: Record<string, string> = {}
-  Object.entries(process.env).forEach(([key, value]) => {
-    if (value !== undefined) {
-      cleanEnv[key] = value
-    }
+  await exec.exec('git', ['config', configSelector, '--unset-all', 'http.https://github.com/.extraheader'], { ignoreReturnCode: true, cwd })
+  await exec.exec('git', ['config', configSelector, '--add', 'http.https://github.com/.extraheader', `AUTHORIZATION: basic ${basicCredential}`], {
+    cwd
   })
-
-  // Git clone copies LFS objects from mirror if they exist by default. GIT_LFS_SKIP_SMUDGE=1 prevents that.
-  const envVars = skipLFS ? { ...cleanEnv, GIT_LFS_SKIP_SMUDGE: '1' } : cleanEnv
-
-  const flagString = flags.join(' ')
-  await exec.exec(
-    `git clone ${flagString} -- https://token@github.com/${owner}/${repo}.git ${repoDir}`,
-    [],
-    { env: envVars }
-  )
+  await exec.exec('git', ['config', configSelector, '--add', 'url.https://github.com/.insteadOf', 'git@github.com:'], { cwd })
 }
 
-async function gitFetch(gitDir: string) {
-  await exec.exec(
-    `git -c protocol.version=2 --git-dir ${gitDir} fetch --no-recurse-submodules origin`
-  )
+async function cleanupGitAuth(opts: { global: true } | { repoDir: string }) {
+  let configSelector = 'global' in opts && opts.global ? '--global' : '--local'
+  const cwd = 'repoDir' in opts ? opts.repoDir : undefined
+
+  await exec.exec('git', ['config', configSelector, '--unset-all', 'http.https://github.com/.extraheader'], { ignoreReturnCode: true, cwd })
+  await exec.exec('git', ['config', configSelector, '--unset-all', 'url.https://github.com/.insteadOf'], { ignoreReturnCode: true, cwd })
 }
 
-async function branchExists(
-  gitDir: string,
-  remote: boolean,
-  pattern: string
-): Promise<boolean> {
-  var flags: string[] = []
-  if (gitDir) {
-    flags.push(`--git-dir`, `${gitDir}`)
+// Similar to exec.exec, but options.env is interpreted as variables to add (as opposed to replacing the env).
+function execEnv(commandLine: string, args?: string[], options?: exec.ExecOptions): Promise<number> {
+  const env = {
+    ...(process.env as Record<string, string>),
+    ...options?.env
   }
-
-  flags.push(`branch`, `--list`)
-  if (remote) {
-    flags.push(`--remote`)
-  }
-
-  flags.push(pattern)
-  const output = await execGit(flags)
-  return !!output.stdout.trim()
+  return exec.exec(commandLine, args, { ...options, env: env })
 }
 
-async function tagExists(gitDir: string, pattern: string): Promise<boolean> {
-  var flags: string[] = []
-  if (gitDir) {
-    flags.push(`--git-dir`, `${gitDir}`)
-  }
-
-  flags.push(`tag`, `--list`)
-  flags.push(pattern)
-  const output = await execGit(flags)
-  return !!output.stdout.trim()
-}
-
-async function gitLFSFetch(gitDir: string, repoDir: string, ref: string) {
-  var flags: string[] = []
-  if (gitDir) {
-    flags.push(`--git-dir ${gitDir}`)
-  }
-  if (repoDir) {
-    flags.push(`--work-tree ${repoDir}`)
-  }
-  const flagString = flags.join(' ')
-  await exec.exec(`git ${flagString} lfs fetch origin ${ref}`)
-}
-
-async function gitSubmoduleUpdate(
-  config: IInputConfig,
-  mirrorDir: string,
-  repoDir: string
-) {
-  const recursiveFlag = config.nestedSubmodules ? '--recurse' : ''
-  const fetchDepthFlag = getFetchDepthFlag(config)
-  const dissociateFlag = config.dissociateSubmodules ? '--dissociate' : ''
-  const debugFlag = core.isDebug() ? '--debug_to_console' : ''
-  await exec.exec(
-    `nsc git-checkout update-submodules --mirror_base_path "${mirrorDir}" --repository_path "${repoDir}" ${recursiveFlag} ${fetchDepthFlag} ${dissociateFlag} ${debugFlag}`
-  )
-}
-
-// Returns the --depth <depth> flag or an empty string if the full history should be fetched.
-function getFetchDepthFlag(config: IInputConfig) {
-  return config.fetchDepth <= 0 ? '' : `--depth=${config.fetchDepth}`
-}
-
-class GitOutput {
-  stdout = ''
-  exitCode = 0
-}
-
-async function execGit(args: string[]): Promise<GitOutput> {
-  const result = new GitOutput()
-
-  const defaultListener = {
-    stdout: (data: Buffer) => {
-      stdout.push(data.toString())
-    }
-  }
-
-  const stdout: string[] = []
-  const options = {
-    listeners: defaultListener
-  }
-
-  result.exitCode = await exec.exec(`git`, args, options)
-  result.stdout = stdout.join('')
-
-  core.debug(result.exitCode.toString())
-  core.debug(result.stdout)
-
-  return result
+async function gitSubmoduleUpdate(config: IInputConfig, mirrorDir: string, repoDir: string) {
+  const recursiveFlag = config.nestedSubmodules ? ['--recurse'] : []
+  const fetchDepthFlag = config.fetchDepth <= 0 ? [] : ['--depth', config.fetchDepth.toString()]
+  const dissociateFlag = config.dissociateSubmodules ? ['--dissociate'] : []
+  const debugFlag = core.isDebug() ? ['--debug_to_console'] : []
+  await exec.exec('nsc', [
+    'git-checkout',
+    'update-submodules',
+    '--mirror_base_path',
+    mirrorDir,
+    '--repository_path',
+    repoDir,
+    ...recursiveFlag,
+    ...fetchDepthFlag,
+    ...dissociateFlag,
+    ...debugFlag
+  ])
 }
