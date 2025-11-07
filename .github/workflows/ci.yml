@@ -9,64 +9,48 @@ on:
   workflow_dispatch:
 
 jobs:
-  nscloud-runner:
-    name: GitHub Actions Test on Nscloud Runner
+  compare-github:
+    name: Diff to OG ${{matrix.ref}} d=${{ matrix.fetch-depth }}
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
 
+    strategy:
+      fail-fast: false
+      matrix:
+        ref:
+          - "" # action target
+          - "main" # unqualified, to be resolved
+          - "v7.1.0" # unqualified, to be resolved
+          - "65866b8ec2b20cb1433fa38ff8771832b90ac322" # specific commit
+          - "refs/heads/test-data/v2/basic" # a branch
+          - "refs/tags/v7.1.0" # a tag
+        fetch-depth:
+          - 0 # full history
+          - 1 # shallow clone
+
     steps:
-      - name: Github Checkout current
+      - name: Check out action
         uses: actions/checkout@v4
-      - name: Namespace Checkout Current
+      - name: Github checkout
+        uses: actions/checkout@v4
+        with:
+          path: github-current
+          ref: ${{ matrix.ref }}
+          fetch-depth: ${{ matrix.fetch-depth }}
+      - name: Namespace Checkout
         uses: ./ # Uses an action in the root directory
         with:
           path: nscloud-current
-      - name: Compare current
-        run: |
-          if cmp --silent -- action.yml nscloud-current/action.yml; then
-            echo "files contents are identical"
-          else
-            echo "files differ:"
+          ref: ${{ matrix.ref }}
+          fetch-depth: ${{ matrix.fetch-depth }}
+      - name: Compare checkouts
+        run: .github/tests/compare-checkouts.sh github-current nscloud-current dist/index.js
 
-            diff action.yml nscloud-current/action.yml
-
-            exit 1
-          fi
-
-      - name: Github Checkout main
+  basic-checkout:
+    name: Basic checkout tests
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
         uses: actions/checkout@v4
-        with:
-          path: github-main
-      - name: Namespace Checkout main
-        uses: ./ # Uses an action in the root directory
-        with:
-          path: nscloud-main
-      - name: Compare main
-        run: |
-          if cmp --silent -- github-main/action.yml nscloud-main/action.yml; then
-            echo "files contents are identical"
-          else
-            echo "files differ:"
-
-            diff github-main/action.yml nscloud-main/action.yml
-
-            exit 1
-          fi
-
-      # (NSL-4050) Test for ref using tags
-      - name: Namespace Checkout main
-        uses: ./ # Uses an action in the root directory
-        with:
-          path: NSL-4050-main
-          ref: refs/tags/v4
-      - name: Compare main
-        run: |
-          if [ "$(git -C ./NSL-4050-main rev-parse HEAD)" = "e10c48a9b2a3b8a4c18f51f13cca12846febe160" ] ; then
-            echo "commmit is identical"
-          else
-            echo "not expected commit for tag v4, expected e10c48a9b2a3b8a4c18f51f13cca12846febe160"
-            exit 1
-          fi
-
       - name: Basic checkout tests
         uses: ./
         with: 
@@ -76,6 +60,12 @@ jobs:
         shell: bash
         run: .github/tests/verify-basic.sh
 
+  side-by-side:
+    name: Side-by-side example
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
       - name: Checkout side by side 1
         uses: ./
         with:
@@ -90,6 +80,12 @@ jobs:
         shell: bash
         run: .github/tests/verify-side-by-side.sh
 
+  lfs:
+    name: LFS example
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
       - name: Checkout LFS
         uses: ./
         with:
@@ -101,45 +97,76 @@ jobs:
         shell: bash
         run: .github/tests/verify-lfs.sh
 
-      - name: Checkout submodules false
+  submodules:
+    name: Submodules=${{ matrix.variant }}
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - false
+          - true
+          - recursive
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+      - name: Checkout submodules=${{ matrix.variant }}
         uses: ./
         with:
           ref: test-data/v2/submodule-ssh-url
-          path: submodules-false
-      - name: Verify submodules false
-        run: .github/tests/verify-submodules-false.sh
+          path: submodules-${{ matrix.variant }}
+          submodules: ${{ matrix.variant }}
+      - name: Verify submodules=${{ matrix.variant }}
+        run: .github/tests/verify-submodules-${{ matrix.variant }}.sh
 
-      - name: Checkout submodules true
+  deleted-pull: # NSL-6725
+    name: Check out deleted PR
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+      - name: Namespace Checkout
         uses: ./
         with:
-          ref: test-data/v2/submodule-ssh-url
-          path: submodules-true
-          submodules: true
-      - name: Verify submodules true
-        run: .github/tests/verify-submodules-true.sh
+          path: pr
+          ref: "refs/pull/1/merge" # this ref doesn't exist but will be synthesized from commit
+          commit: "65866b8ec2b20cb1433fa38ff8771832b90ac322" # hidden input
+          fetch-depth: 1
+      - name: Verify checkouts
+        run: .github/tests/verify-head-and-ref.sh pr 65866b8ec2b20cb1433fa38ff8771832b90ac322 refs/remotes/pull/1/merge
 
-      - name: Checkout submodules recursive
+  fetch-more: # NSL-6774
+    name: Another branch (${{ matrix.fetch && 'shallow, ' || 'deep, ' }} ${{ matrix.dissociate && 'dissociate, ' || ''}}${{ matrix.fetch && 'fetch, ' || ''}}checkout)
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    strategy:
+      fail-fast: false
+      matrix:
+        dissociate:
+          - false
+          - true
+        fetch:
+          - false
+          - true
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+      - name: Check out main
         uses: ./
         with:
-          ref: test-data/v2/submodule-ssh-url
-          path: submodules-recursive
-          submodules: recursive
-      - name: Verify submodules recursive
-        run: .github/tests/verify-submodules-recursive.sh
-
-      - uses: ruby/action-slack@v3.2.1
-        with:
-          payload: |
-            {
-              "attachments": [{
-                "title": "Checkout action failed on nscloud runners! Check now: ${{ job.status }}: ${{ github.workflow }}",
-                "title_link": "https://github.com/${{ github.repository }}/commit/${{ github.sha }}/checks",
-                "text": "${{ github.repository }}@${{ github.ref }}: <https://github.com/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>",
-                "fields": [{ "value": ${{ toJson(github.event.head_commit.message) }}, "short": false }],
-                "footer": "${{ github.event.head_commit.committer.name }} at ${{ github.event.head_commit.timestamp }}",
-                "color": "danger"
-              }]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        if: failure()
+          ref: main
+          path: repo
+          fetch-depth: ${{ matrix.fetch && 1 || 0 }} # if we are not fetching we should be deep-cloned from get-go
+          dissociate: ${{ matrix.dissociate }} # if set, fetch will download from remote
+      - name: Inspect checkout
+        run: git show-ref
+        working-directory: repo
+      - name: Fetch another branch
+        run: git fetch --progress origin test-data/v2/basic
+        working-directory: repo
+        if: matrix.fetch
+      - name: Check out that branch
+        run: git checkout test-data/v2/basic
+        working-directory: repo
+      - name: Verify checkout
+        run: sdiff <(echo test-data/v2/basic) <(git branch --show-current)
+        working-directory: repo
