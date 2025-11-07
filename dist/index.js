@@ -10948,6 +10948,11 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
             await exec.exec('git', ['--git-dir', mirrorDir, 'lfs', 'fetch', 'origin']);
         }
         core.endGroup();
+        if (core.isDebug()) {
+            core.startGroup('Mirrored refs');
+            await exec.exec('git', ['--git-dir', mirrorDir, 'show-ref']);
+            core.endGroup();
+        }
         core.startGroup('Fetch using the cache');
         // Resolve references.
         const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir);
