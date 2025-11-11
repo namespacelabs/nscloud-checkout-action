@@ -57,7 +57,17 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     }
 
     // Fetch commits for mirror
-    await exec.exec('git', ['-c', 'protocol.version=2', '--git-dir', mirrorDir, 'fetch', '--no-recurse-submodules', 'origin'])
+    await exec.exec('git', [
+      '-c',
+      'protocol.version=2',
+      '--git-dir',
+      mirrorDir,
+      'fetch',
+      '--no-recurse-submodules',
+      '--prune',
+      '--prune-tags',
+      'origin'
+    ])
 
     // If Git LFS is required, download objects in cache
     if (config.downloadGitLFS) {
