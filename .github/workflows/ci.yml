@@ -82,7 +82,14 @@ jobs:
 
   lfs:
     name: LFS example
-    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    strategy:
+      matrix:
+        runs-on:
+          - nscloud-ubuntu-22.04-amd64-2x4
+          - nscloud-macos-sequoia-stable-arm64-4x7
+    runs-on:
+      - "${{ matrix.runs-on }}-with-cache"
+      - nscloud-git-mirror-5gb
     steps:
       - name: Check out action
         uses: actions/checkout@v4
