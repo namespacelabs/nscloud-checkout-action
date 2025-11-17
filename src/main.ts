@@ -115,14 +115,14 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     // If Git LFS is required, download objects. This should use the mirror cached LFS objects.
     if (config.downloadGitLFS) {
       core.startGroup('Fetch LFS resources')
-      await exec.exec('git', [...gitRepoFlags, 'lfs', 'fetch', 'origin', checkoutInfo.pointerRef], { env: referenceEnv })
+      await execEnv('git', [...gitRepoFlags, 'lfs', 'fetch', 'origin', checkoutInfo.pointerRef], { env: referenceEnv })
       core.endGroup()
     }
 
     // Write the configuration to use the mirror always.
     if (config.dissociateMainRepo) {
       core.startGroup(`Dissociate checkout from cache`)
-      await exec.exec('git', [...gitRepoFlags, 'repack', '-a', '-d'], { env: referenceEnv })
+      await execEnv('git', [...gitRepoFlags, 'repack', '-a', '-d'], { env: referenceEnv })
       core.endGroup()
     } else {
       const alternatesPath = path.join(repoDir, '.git/objects/info/alternates')
