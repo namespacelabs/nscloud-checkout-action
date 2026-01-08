@@ -58,6 +58,10 @@ inputs:
   lfs:
     description: 'Whether to download and cache Git-LFS files'
     default: "false"
+    
+  filter:
+    description: 'Partially clone against a given filter.'
+    default: ""
 
 runs:
   using: node20

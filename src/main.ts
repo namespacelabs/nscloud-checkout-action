@@ -102,12 +102,24 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
 
     // Fetch the refs
     const fetchDepthFlags = config.fetchDepth <= 0 ? [] : ['--depth', config.fetchDepth.toString(), '--no-tags']
+    const filterFlags = config.filter === '' ? [] : ['--filter', config.filter]
     const referenceEnv = {
       GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(mirrorDir, 'objects')
     }
     await execEnv(
       'git',
-      [...gitRepoFlags, 'fetch', '-v', '--prune', '--progress', '--no-recurse-submodules', ...fetchDepthFlags, 'origin', ...checkoutInfo.fetchRefs],
+      [
+        ...gitRepoFlags,
+        'fetch',
+        '-v',
+        '--prune',
+        '--progress',
+        '--no-recurse-submodules',
+        ...fetchDepthFlags,
+        ...filterFlags,
+        'origin',
+        ...checkoutInfo.fetchRefs
+      ],
       { env: referenceEnv }
     )
     core.endGroup()
@@ -170,6 +182,7 @@ interface IInputConfig {
   ref: string
   token: string
   fetchDepth: number
+  filter: string
   targetPath: string
   submodules: boolean
   nestedSubmodules: boolean
@@ -215,6 +228,9 @@ function parseInputConfig(): IInputConfig {
   result.token = core.getInput('token')
   result.fetchDepth = Number(core.getInput('fetch-depth'))
   core.debug(`Depth ${result.fetchDepth}`)
+
+  result.filter = core.getInput('filter')
+  core.debug(`Filter ${result.filter}`)
 
   result.targetPath = core.getInput('path')
   core.debug(`Path ${result.targetPath}`)
@@ -394,6 +410,7 @@ function execEnv(commandLine: string, args?: string[], options?: exec.ExecOption
 async function gitSubmoduleUpdate(config: IInputConfig, mirrorDir: string, repoDir: string) {
   const recursiveFlag = config.nestedSubmodules ? ['--recurse'] : []
   const fetchDepthFlag = config.fetchDepth <= 0 ? [] : ['--depth', config.fetchDepth.toString()]
+  const filterFlags = config.filter === '' ? [] : ['--filter', config.filter]
   const dissociateFlag = config.dissociateSubmodules ? ['--dissociate'] : []
   const debugFlag = core.isDebug() ? ['--debug_to_console'] : []
   await exec.exec('nsc', [
@@ -405,6 +422,7 @@ async function gitSubmoduleUpdate(config: IInputConfig, mirrorDir: string, repoD
     repoDir,
     ...recursiveFlag,
     ...fetchDepthFlag,
+    ...filterFlags,
     ...dissociateFlag,
     ...debugFlag
   ])
