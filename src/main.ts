@@ -342,12 +342,14 @@ async function getCheckoutInfo(ref: string, commit: string, depth: number, mirro
     if (ref) {
       result.fetchRefs = [`+${commit || ref}:${result.pointerRef}`]
     } else {
-      result.fetchRefs = [commit]
+      result.fetchRefs = [commit] // Just the SHA, no ref mapping
     }
   } else {
     result.fetchRefs = ['+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*']
     if (ref && !upperRef.startsWith('REFS/HEADS/') && !upperRef.startsWith('REFS/TAGS/')) {
       result.fetchRefs.push(`+${commit || ref}:${result.pointerRef}`)
+    } else if (!ref && commit) {
+      result.fetchRefs.push(commit) // Just the SHA, no ref mapping
     }
   }
 

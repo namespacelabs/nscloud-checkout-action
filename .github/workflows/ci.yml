@@ -177,3 +177,9 @@ jobs:
       - name: Verify checkout
         run: sdiff <(echo test-data/v2/basic) <(git branch --show-current)
         working-directory: repo
+      - name: Breakpoint on failure
+        if: failure()
+        uses: namespacelabs/breakpoint-action@v0
+        with:
+          duration: 15m
+          authorized-users: hugosantos,n-g,htr,InverseIntegral,annervisser
