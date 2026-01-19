@@ -32882,6 +32882,10 @@ async function getCheckoutInfo(ref, commit, depth, mirrorDir) {
         if (ref && !upperRef.startsWith('REFS/HEADS/') && !upperRef.startsWith('REFS/TAGS/')) {
             result.fetchRefs.push(`+${commit || ref}:${result.pointerRef}`);
         }
+        else if (!ref && commit) {
+            // Explicitly fetch the commit when only a SHA was provided
+            result.fetchRefs.push(commit);
+        }
     }
     core.debug(`originalRef = ${result.originalRef}`);
     core.debug(`pointerRef = ${result.pointerRef}`);
