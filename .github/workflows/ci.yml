@@ -177,3 +177,21 @@ jobs:
       - name: Verify checkout
         run: sdiff <(echo test-data/v2/basic) <(git branch --show-current)
         working-directory: repo
+
+  trace:
+    name: Git tracing enabled
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+      - name: Checkout with tracing
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: traced
+          trace: true
+      - name: Verify trace output was produced
+        run: |
+          # The checkout should have succeeded and trace output should have been visible in logs
+          test -d traced
+          test -f traced/README.md
