@@ -32884,6 +32884,10 @@ async function getCheckoutInfo(ref, commit, depth, mirrorDir) {
         }
         else if (!ref && commit) {
             // Explicitly fetch the commit when only a SHA was provided
+            // a commit might not be reachable if:
+            // - The branch was force-pushed (old commits become orphaned)
+            // - The branch was deleted
+            // - It's from a closed PR that was never merged
             result.fetchRefs.push(commit);
         }
     }
