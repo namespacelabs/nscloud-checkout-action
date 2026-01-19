@@ -53,25 +53,19 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     const mirrorDir = path.join(gitMirrorPath, `${version}/${config.owner}-${config.repo}`)
     if (!fs.existsSync(mirrorDir)) {
       fs.mkdirSync(mirrorDir, { recursive: true })
-      await exec.exec('git', ['clone', '--mirror', '--', remoteURL, mirrorDir])
+      await execWithGitEnv('git', ['clone', '--mirror', '--', remoteURL, mirrorDir], config.maxAttempts)
     }
 
     // Fetch commits for mirror
-    await exec.exec('git', [
-      '-c',
-      'protocol.version=2',
-      '--git-dir',
-      mirrorDir,
-      'fetch',
-      '--no-recurse-submodules',
-      '--prune',
-      '--prune-tags',
-      'origin'
-    ])
+    await execWithGitEnv(
+      'git',
+      ['-c', 'protocol.version=2', '--git-dir', mirrorDir, 'fetch', '--no-recurse-submodules', '--prune', '--prune-tags', 'origin'],
+      config.maxAttempts
+    )
 
     // If Git LFS is required, download objects in cache
     if (config.downloadGitLFS) {
-      await exec.exec('git', ['--git-dir', mirrorDir, 'lfs', 'fetch', 'origin'])
+      await execWithGitEnv('git', ['--git-dir', mirrorDir, 'lfs', 'fetch', 'origin'], config.maxAttempts)
     }
     core.endGroup()
 
@@ -106,7 +100,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     const referenceEnv = {
       GIT_ALTERNATE_OBJECT_DIRECTORIES: path.join(mirrorDir, 'objects')
     }
-    await execEnv(
+    await execWithGitEnv(
       'git',
       [
         ...gitRepoFlags,
@@ -120,6 +114,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         'origin',
         ...checkoutInfo.fetchRefs
       ],
+      config.maxAttempts,
       { env: referenceEnv }
     )
     core.endGroup()
@@ -127,14 +122,17 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     // If Git LFS is required, download objects. This should use the mirror cached LFS objects.
     if (config.downloadGitLFS) {
       core.startGroup('Fetch LFS resources')
-      await execEnv('git', [...gitRepoFlags, 'lfs', 'fetch', 'origin', checkoutInfo.pointerRef], { env: referenceEnv })
+      await execWithGitEnv('git', [...gitRepoFlags, 'lfs', 'fetch', 'origin', checkoutInfo.pointerRef], config.maxAttempts, {
+        env: referenceEnv
+      })
       core.endGroup()
     }
 
     // Write the configuration to use the mirror always.
     if (config.dissociateMainRepo) {
       core.startGroup(`Dissociate checkout from cache`)
-      await execEnv('git', [...gitRepoFlags, 'repack', '-a', '-d'], { env: referenceEnv })
+      // No retries: repack is a local operation
+      await execWithGitEnv('git', [...gitRepoFlags, 'repack', '-a', '-d'], 1, { env: referenceEnv })
       core.endGroup()
     } else {
       const alternatesPath = path.join(repoDir, '.git/objects/info/alternates')
@@ -145,9 +143,13 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     // Checkout the ref
     const smudgeEnv = { GIT_LFS_SKIP_SMUDGE: config.downloadGitLFS ? '0' : '1' }
     const startBranchFlags = checkoutInfo.startBranch ? ['-B', checkoutInfo.startBranch] : []
-    await execEnv('git', [...gitRepoFlags, 'checkout', '--progress', '--force', ...startBranchFlags, checkoutInfo.pointerRef], {
-      env: { ...smudgeEnv, ...referenceEnv }
-    })
+    // No retries: checkout is a local operation
+    await execWithGitEnv(
+      'git',
+      [...gitRepoFlags, 'checkout', '--progress', '--force', ...startBranchFlags, checkoutInfo.pointerRef],
+      1,
+      { env: { ...smudgeEnv, ...referenceEnv } }
+    )
     core.endGroup()
 
     // Clone submodules in repo
@@ -190,6 +192,7 @@ interface IInputConfig {
   dissociateSubmodules: boolean
   persistCredentials: boolean
   downloadGitLFS: boolean
+  maxAttempts: number
 }
 
 function parseInputConfig(): IInputConfig {
@@ -276,7 +279,10 @@ function parseInputConfig(): IInputConfig {
   } else {
     result.downloadGitLFS = false
   }
-  core.debug(`persistCredentials = ${result.downloadGitLFS}`)
+  core.debug(`downloadGitLFS = ${result.downloadGitLFS}`)
+
+  result.maxAttempts = Math.max(1, Number(core.getInput('max-attempts')) || 3)
+  core.debug(`maxAttempts = ${result.maxAttempts}`)
 
   return result
 }
@@ -398,13 +404,37 @@ async function cleanupGitAuth(opts: { global: true } | { repoDir: string }) {
   await exec.exec('git', ['config', configSelector, '--unset-all', 'url.https://github.com/.insteadOf'], { ignoreReturnCode: true, cwd })
 }
 
+const gitEnv = {
+  GIT_TERMINAL_PROMPT: '0',
+  GCM_INTERACTIVE: 'Never'
+}
+
 // Similar to exec.exec, but options.env is interpreted as variables to add (as opposed to replacing the env).
-function execEnv(commandLine: string, args?: string[], options?: exec.ExecOptions): Promise<number> {
+async function execWithGitEnv(
+  commandLine: string,
+  args: string[],
+  maxAttempts: number,
+  options?: exec.ExecOptions
+): Promise<number> {
   const env = {
     ...(process.env as Record<string, string>),
+    ...gitEnv,
     ...options?.env
   }
-  return exec.exec(commandLine, args, { ...options, env: env })
+  let lastError: Error | undefined
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await exec.exec(commandLine, args, { ...options, env })
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error))
+      if (attempt < maxAttempts) {
+        const delay = attempt * 1000
+        core.warning(`Command failed (attempt ${attempt}/${maxAttempts}), retrying in ${delay}ms: ${lastError.message}`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+  }
+  throw lastError
 }
 
 async function gitSubmoduleUpdate(config: IInputConfig, mirrorDir: string, repoDir: string) {
@@ -413,17 +443,21 @@ async function gitSubmoduleUpdate(config: IInputConfig, mirrorDir: string, repoD
   const filterFlags = config.filter === '' ? [] : ['--filter', config.filter]
   const dissociateFlag = config.dissociateSubmodules ? ['--dissociate'] : []
   const debugFlag = core.isDebug() ? ['--debug_to_console'] : []
-  await exec.exec('nsc', [
-    'git-checkout',
-    'update-submodules',
-    '--mirror_base_path',
-    mirrorDir,
-    '--repository_path',
-    repoDir,
-    ...recursiveFlag,
-    ...fetchDepthFlag,
-    ...filterFlags,
-    ...dissociateFlag,
-    ...debugFlag
-  ])
+  await execWithGitEnv(
+    'nsc',
+    [
+      'git-checkout',
+      'update-submodules',
+      '--mirror_base_path',
+      mirrorDir,
+      '--repository_path',
+      repoDir,
+      ...recursiveFlag,
+      ...fetchDepthFlag,
+      ...filterFlags,
+      ...dissociateFlag,
+      ...debugFlag
+    ],
+    config.maxAttempts
+  )
 }

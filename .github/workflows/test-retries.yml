@@ -1,0 +1,84 @@
+name: Test Retries
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - 'releases/*'
+  workflow_dispatch:
+
+jobs:
+  retry-succeeds-after-transient-failures:
+    name: Retry succeeds after transient failures
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+
+      - name: Start flaky proxy (fails first 2 requests)
+        run: |
+          node .github/tests/flaky-proxy.js 8888 2 &
+          echo $! > /tmp/proxy.pid
+          sleep 1
+
+      - name: Checkout with retries through flaky proxy
+        uses: ./
+        with:
+          path: test-repo
+          ref: test-data/v2/basic
+          max-attempts: 3
+        env:
+          # Configure git to use our flaky proxy
+          https_proxy: http://127.0.0.1:8888
+
+      - name: Stop proxy
+        if: always()
+        run: |
+          if [ -f /tmp/proxy.pid ]; then
+            kill $(cat /tmp/proxy.pid) 2>/dev/null || true
+          fi
+
+      - name: Verify checkout succeeded
+        run: |
+          test -d test-repo
+          test -f test-repo/README.md
+
+  retry-fails-when-disabled:
+    name: Retry disabled fails on transient error
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+
+      - name: Start flaky proxy (fails first 2 requests)
+        run: |
+          node .github/tests/flaky-proxy.js 8889 2 &
+          echo $! > /tmp/proxy.pid
+          sleep 1
+
+      - name: Checkout with retries disabled should fail
+        id: checkout
+        uses: ./
+        continue-on-error: true
+        with:
+          path: test-repo
+          ref: test-data/v2/basic
+          max-attempts: 1
+        env:
+          https_proxy: http://127.0.0.1:8889
+
+      - name: Stop proxy
+        if: always()
+        run: |
+          if [ -f /tmp/proxy.pid ]; then
+            kill $(cat /tmp/proxy.pid) 2>/dev/null || true
+          fi
+
+      - name: Verify checkout failed
+        run: |
+          if [ "${{ steps.checkout.outcome }}" != "failure" ]; then
+            echo "Expected checkout to fail with retries disabled"
+            exit 1
+          fi
+          echo "Checkout failed as expected"
