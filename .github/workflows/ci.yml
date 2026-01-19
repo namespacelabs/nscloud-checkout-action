@@ -21,6 +21,7 @@ jobs:
           - "main" # unqualified, to be resolved
           - "v7.1.0" # unqualified, to be resolved
           - "65866b8ec2b20cb1433fa38ff8771832b90ac322" # specific commit
+          - "9a889919b07f093332488f55290d18b4a37cab91" # specific commit - not on main
           - "refs/heads/test-data/v2/basic" # a branch
           - "refs/tags/v7.1.0" # a tag
         fetch-depth:
