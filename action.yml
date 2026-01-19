@@ -63,6 +63,10 @@ inputs:
     description: 'Partially clone against a given filter.'
     default: ""
 
+  retry-attempts:
+    description: 'Number of attempts to retry git network operations. Set to 1 to disable retries.'
+    default: "3"
+
 runs:
   using: node20
   main: dist/index.js
