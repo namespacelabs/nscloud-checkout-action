@@ -27,7 +27,7 @@ jobs:
         with:
           path: test-repo
           ref: test-data/v2/basic
-          retry-attempts: 3
+          max-attempts: 3
         env:
           # Configure git to use our flaky proxy
           https_proxy: http://127.0.0.1:8888
@@ -64,7 +64,7 @@ jobs:
         with:
           path: test-repo
           ref: test-data/v2/basic
-          retry-attempts: 1
+          max-attempts: 1
         env:
           https_proxy: http://127.0.0.1:8889
 
