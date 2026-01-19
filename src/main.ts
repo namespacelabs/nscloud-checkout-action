@@ -355,6 +355,13 @@ async function getCheckoutInfo(ref: string, commit: string, depth: number, mirro
     result.fetchRefs = ['+refs/heads/*:refs/remotes/origin/*', '+refs/tags/*:refs/tags/*']
     if (ref && !upperRef.startsWith('REFS/HEADS/') && !upperRef.startsWith('REFS/TAGS/')) {
       result.fetchRefs.push(`+${commit || ref}:${result.pointerRef}`)
+    } else if (!ref && commit) {
+      // Explicitly fetch the commit when only a SHA was provided
+      // a commit might not be reachable if:
+      // - The branch was force-pushed (old commits become orphaned)
+      // - The branch was deleted
+      // - It's from a closed PR that was never merged
+      result.fetchRefs.push(commit)
     }
   }
 
