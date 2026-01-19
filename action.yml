@@ -67,6 +67,10 @@ inputs:
     description: 'Maximum number of attempts for git network operations. Set to 1 to disable retries.'
     default: "3"
 
+  trace:
+    description: 'Enable git tracing (GIT_TRACE) for debugging.'
+    default: "false"
+
 runs:
   using: node20
   main: dist/index.js

@@ -32650,7 +32650,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         core.endGroup();
         if (core.isDebug()) {
             core.startGroup('Mirrored refs');
-            await exec.exec('git', ['--git-dir', mirrorDir, 'show-ref']);
+            await execWithGitEnv('git', ['--git-dir', mirrorDir, 'show-ref'], 1);
             core.endGroup();
         }
         core.startGroup('Fetch using the cache');
@@ -32664,10 +32664,10 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         // Clone the repo.
         // We don't use git-clone to have full control over the configuration of remote
         // and what we are fetching from the remote vs the mirror (see NSL-6774, NSL-6725, NSL-6825).
-        await exec.exec('git', ['-c', 'advice.defaultBranchName=false', 'init', repoDir]);
-        await exec.exec(`git config --global --add safe.directory ${repoDir}`);
+        await execWithGitEnv('git', ['-c', 'advice.defaultBranchName=false', 'init', repoDir], 1);
+        await execWithGitEnv('git', ['config', '--global', '--add', 'safe.directory', repoDir], 1);
         const gitRepoFlags = ['--git-dir', `${repoDir}/.git`, '--work-tree', repoDir];
-        await exec.exec('git', [...gitRepoFlags, 'remote', 'add', 'origin', remoteURL]);
+        await execWithGitEnv('git', [...gitRepoFlags, 'remote', 'add', 'origin', remoteURL], 1);
         // Fetch the refs
         const fetchDepthFlags = config.fetchDepth <= 0 ? [] : ['--depth', config.fetchDepth.toString(), '--no-tags'];
         const filterFlags = config.filter === '' ? [] : ['--filter', config.filter];
@@ -32711,7 +32711,9 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         const smudgeEnv = { GIT_LFS_SKIP_SMUDGE: config.downloadGitLFS ? '0' : '1' };
         const startBranchFlags = checkoutInfo.startBranch ? ['-B', checkoutInfo.startBranch] : [];
         // No retries: checkout is a local operation
-        await execWithGitEnv('git', [...gitRepoFlags, 'checkout', '--progress', '--force', ...startBranchFlags, checkoutInfo.pointerRef], 1, { env: { ...smudgeEnv, ...referenceEnv } });
+        await execWithGitEnv('git', [...gitRepoFlags, 'checkout', '--progress', '--force', ...startBranchFlags, checkoutInfo.pointerRef], 1, {
+            env: { ...smudgeEnv, ...referenceEnv }
+        });
         core.endGroup();
         // Clone submodules in repo
         if (config.submodules) {
@@ -32817,6 +32819,8 @@ function parseInputConfig() {
     core.debug(`downloadGitLFS = ${result.downloadGitLFS}`);
     result.maxAttempts = Math.max(1, Number(core.getInput('max-attempts')) || 3);
     core.debug(`maxAttempts = ${result.maxAttempts}`);
+    result.trace = core.getInput('trace').toUpperCase() === 'TRUE';
+    core.debug(`trace = ${result.trace}`);
     return result;
 }
 async function getCheckoutInfo(ref, commit, depth, mirrorDir) {
@@ -32824,14 +32828,14 @@ async function getCheckoutInfo(ref, commit, depth, mirrorDir) {
     if (!ref && !commit) {
         core.debug('No ref or commit => determine default branch');
         // Luckily we have a faithful mirror of the remote locally, just resolve its HEAD.
-        const output = await exec.getExecOutput('git', ['--git-dir', mirrorDir, 'symbolic-ref', '--quiet', 'HEAD']);
+        const output = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'symbolic-ref', '--quiet', 'HEAD']);
         ref = output.stdout.trim();
         core.debug(`Detected default branch ${ref}`);
     }
     // Unqualified ref => resolve using normal Git rules.
     if (ref && !ref.toUpperCase().startsWith('REFS/')) {
         core.debug('Unqualified ref => resolve');
-        const output = await exec.getExecOutput('git', ['--git-dir', mirrorDir, 'rev-parse', '--verify', '--symbolic-full-name', ref]);
+        const output = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'rev-parse', '--verify', '--symbolic-full-name', ref]);
         ref = output.stdout.trim();
         core.debug(`Detected fully-qualified ref ${ref}`);
     }
@@ -32889,10 +32893,8 @@ async function configGitAuthForSubmodules(token, repoDir) {
     // Set authentication
     const basicCredential = Buffer.from(`x-access-token:${token}`, 'utf8').toString('base64');
     core.setSecret(basicCredential);
-    await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ${basicCredential}'"`, [], { cwd: repoDir ? repoDir : undefined });
-    await exec.exec(`git submodule foreach --recursive sh -c "git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'"`, [], {
-        cwd: repoDir ? repoDir : undefined
-    });
+    await execWithGitEnv('git', ['submodule', 'foreach', '--recursive', 'sh', '-c', `git config --local --add 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ${basicCredential}'`], 1, { cwd: repoDir ? repoDir : undefined });
+    await execWithGitEnv('git', ['submodule', 'foreach', '--recursive', 'sh', '-c', `git config --local --add 'url.https://github.com/.insteadOf' 'git@github.com:'`], 1, { cwd: repoDir ? repoDir : undefined });
 }
 async function configGitAuth(token, opts) {
     // Set authentication
@@ -32901,33 +32903,44 @@ async function configGitAuth(token, opts) {
     let configSelector = 'global' in opts && opts.global ? '--global' : '--local';
     const cwd = 'repoDir' in opts ? opts.repoDir : undefined;
     // (NSL-2981) Remove previous extra auth header if any
-    await exec.exec('git', ['config', configSelector, '--unset-all', 'http.https://github.com/.extraheader'], { ignoreReturnCode: true, cwd });
-    await exec.exec('git', ['config', configSelector, '--add', 'http.https://github.com/.extraheader', `AUTHORIZATION: basic ${basicCredential}`], {
+    await execWithGitEnv('git', ['config', configSelector, '--unset-all', 'http.https://github.com/.extraheader'], 1, { ignoreReturnCode: true, cwd });
+    await execWithGitEnv('git', ['config', configSelector, '--add', 'http.https://github.com/.extraheader', `AUTHORIZATION: basic ${basicCredential}`], 1, {
         cwd
     });
-    await exec.exec('git', ['config', configSelector, '--add', 'url.https://github.com/.insteadOf', 'git@github.com:'], { cwd });
+    await execWithGitEnv('git', ['config', configSelector, '--add', 'url.https://github.com/.insteadOf', 'git@github.com:'], 1, { cwd });
 }
 async function cleanupGitAuth(opts) {
     let configSelector = 'global' in opts && opts.global ? '--global' : '--local';
     const cwd = 'repoDir' in opts ? opts.repoDir : undefined;
-    await exec.exec('git', ['config', configSelector, '--unset-all', 'http.https://github.com/.extraheader'], { ignoreReturnCode: true, cwd });
-    await exec.exec('git', ['config', configSelector, '--unset-all', 'url.https://github.com/.insteadOf'], { ignoreReturnCode: true, cwd });
+    await execWithGitEnv('git', ['config', configSelector, '--unset-all', 'http.https://github.com/.extraheader'], 1, { ignoreReturnCode: true, cwd });
+    await execWithGitEnv('git', ['config', configSelector, '--unset-all', 'url.https://github.com/.insteadOf'], 1, { ignoreReturnCode: true, cwd });
 }
-const gitEnv = {
-    GIT_TERMINAL_PROMPT: '0',
-    GCM_INTERACTIVE: 'Never'
-};
+function getGitExecOptions(options) {
+    const gitEnv = {
+        GIT_TERMINAL_PROMPT: '0',
+        GCM_INTERACTIVE: 'Never'
+    };
+    const traceEnabled = core.isDebug() || core.getInput('trace').toUpperCase() === 'TRUE';
+    if (traceEnabled) {
+        gitEnv.GIT_TRACE = '1';
+        gitEnv.GIT_TRACE_PACK_ACCESS = '1';
+    }
+    return {
+        ...options,
+        env: {
+            ...process.env,
+            ...gitEnv,
+            ...options?.env
+        }
+    };
+}
 // Similar to exec.exec, but options.env is interpreted as variables to add (as opposed to replacing the env).
 async function execWithGitEnv(commandLine, args, maxAttempts, options) {
-    const env = {
-        ...process.env,
-        ...gitEnv,
-        ...options?.env
-    };
+    const execOptions = getGitExecOptions(options);
     let lastError;
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            return await exec.exec(commandLine, args, { ...options, env });
+            return await exec.exec(commandLine, args, execOptions);
         }
         catch (error) {
             lastError = error instanceof Error ? error : new Error(String(error));
@@ -32939,6 +32952,9 @@ async function execWithGitEnv(commandLine, args, maxAttempts, options) {
         }
     }
     throw lastError;
+}
+async function getExecOutputWithGitEnv(commandLine, args, options) {
+    return exec.getExecOutput(commandLine, args, getGitExecOptions(options));
 }
 async function gitSubmoduleUpdate(config, mirrorDir, repoDir) {
     const recursiveFlag = config.nestedSubmodules ? ['--recurse'] : [];
