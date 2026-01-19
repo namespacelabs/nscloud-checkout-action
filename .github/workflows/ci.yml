@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - 'releases/*'
+      - "releases/*"
   workflow_dispatch:
 
 jobs:
@@ -54,7 +54,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Basic checkout tests
         uses: ./
-        with: 
+        with:
           ref: test-data/v2/basic
           path: basic
       - name: Verify basic
