@@ -5,7 +5,7 @@ on:
   push:
     branches:
       - main
-      - 'releases/*'
+      - "releases/*"
   workflow_dispatch:
 
 jobs:
@@ -54,7 +54,7 @@ jobs:
         uses: actions/checkout@v4
       - name: Basic checkout tests
         uses: ./
-        with: 
+        with:
           ref: test-data/v2/basic
           path: basic
       - name: Verify basic
@@ -196,3 +196,21 @@ jobs:
           # The checkout should have succeeded and trace output should have been visible in logs
           test -d traced
           test -f traced/README.md
+
+  orphan-commit:
+    name: Checkout orphaned commit
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+      - name: Checkout orphaned commit by SHA
+        uses: ./
+        with:
+          # This commit was pushed and its branch was then deleted, making it orphaned
+          ref: 0fdac2a7c55231d1a3e964ac055907c7dbe56e9b
+          path: orphan
+          fetch-depth: 0
+      - name: Verify orphaned commit checkout
+        run: |
+          test -f orphan/orphan-test.txt
+          grep -q "This commit will be orphaned" orphan/orphan-test.txt
