@@ -152,7 +152,8 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         // Non-cone mode: write patterns directly to sparse-checkout file.
         // This allows gitignore-style patterns and excludes root files when patterns use "/" prefix.
         await execWithGitEnv('git', [...gitRepoFlags, 'config', 'core.sparseCheckout', 'true'], 1)
-        const sparseCheckoutPath = path.join(repoDir, '.git/info/sparse-checkout')
+        const sparseCheckoutPathOutput = await getExecOutputWithGitEnv('git', [...gitRepoFlags, 'rev-parse', '--git-path', 'info/sparse-checkout'])
+        const sparseCheckoutPath = path.join(repoDir, sparseCheckoutPathOutput.stdout.trim())
         fs.appendFileSync(sparseCheckoutPath, `\n${config.sparseCheckout.join('\n')}\n`)
       }
       core.endGroup()
