@@ -32709,11 +32709,15 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         // Configure sparse checkout if requested
         if (config.sparseCheckout.length > 0) {
             core.startGroup('Configure sparse checkout');
-            await execWithGitEnv('git', [...gitRepoFlags, 'sparse-checkout', 'init', '--cone'], 1);
-            if (!config.sparseCheckoutConeMode) {
-                await execWithGitEnv('git', [...gitRepoFlags, 'config', 'core.sparseCheckoutCone', 'false'], 1);
+            if (config.sparseCheckoutConeMode) {
+                await execWithGitEnv('git', [...gitRepoFlags, 'sparse-checkout', 'set', ...config.sparseCheckout], 1);
             }
-            await execWithGitEnv('git', [...gitRepoFlags, 'sparse-checkout', 'set', ...config.sparseCheckout], 1);
+            else {
+                // Non-cone mode: write patterns directly to sparse-checkout file
+                await execWithGitEnv('git', [...gitRepoFlags, 'config', 'core.sparseCheckout', 'true'], 1);
+                const sparseCheckoutPath = path.join(repoDir, '.git/info/sparse-checkout');
+                fs.appendFileSync(sparseCheckoutPath, `\n${config.sparseCheckout.join('\n')}\n`);
+            }
             core.endGroup();
         }
         core.startGroup(`Check out ${checkoutInfo.pointerRef}`);

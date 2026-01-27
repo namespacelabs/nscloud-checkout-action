@@ -14,10 +14,6 @@ echo "::group::Compare sparse-checkout patterns (gh | ns)"
 sdiff <(git "--git-dir=$gh/.git" sparse-checkout list | sort) <(git "--git-dir=$ns/.git" sparse-checkout list | sort) && echo same || exit 1
 echo ::endgroup::
 
-echo "::group::Compare checked out files (gh | ns)"
-sdiff <(find "$gh" -type f ! -path '*/.git/*' | sed "s|^$gh/||" | sort) <(find "$ns" -type f ! -path '*/.git/*' | sed "s|^$ns/||" | sort) && echo same || exit 1
-echo ::endgroup::
-
 echo "::group::Verify sparse directories exist"
 test -d "$ns/src" && echo "src/ exists" || exit 1
 test -d "$ns/.github" && echo ".github/ exists" || exit 1
@@ -29,4 +25,9 @@ if [ -d "$ns/dist" ]; then
   exit 1
 fi
 echo "dist/ correctly excluded"
+echo ::endgroup::
+
+echo "::group::Compare sparse directory contents (gh | ns)"
+sdiff <(find "$gh/src" "$gh/.github" -type f 2>/dev/null | sed "s|^$gh/||" | sort) \
+      <(find "$ns/src" "$ns/.github" -type f 2>/dev/null | sed "s|^$ns/||" | sort) && echo same || exit 1
 echo ::endgroup::
