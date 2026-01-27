@@ -139,6 +139,27 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
       fs.writeFileSync(alternatesPath, path.join(mirrorDir, 'objects'))
     }
 
+    // Configure sparse checkout if requested.
+    // Implementation matches actions/checkout to ensure identical behavior:
+    // https://github.com/actions/checkout/blob/main/src/git-command-manager.ts#L202-L221
+    if (config.sparseCheckout.length > 0) {
+      core.startGroup('Configure sparse checkout')
+      if (config.sparseCheckoutConeMode) {
+        // Cone mode: `git sparse-checkout set` uses cone mode by default in git 2.37+
+        // and does NOT include root directory files unless "." is specified.
+        await execWithGitEnv('git', [...gitRepoFlags, 'sparse-checkout', 'set', ...config.sparseCheckout], 1)
+      } else {
+        // Non-cone mode: write patterns directly to sparse-checkout file.
+        // This allows gitignore-style patterns and excludes root files when patterns use "/" prefix.
+        await execWithGitEnv('git', [...gitRepoFlags, 'config', 'core.sparseCheckout', 'true'], 1)
+        const sparseCheckoutPathOutput = await getExecOutputWithGitEnv('git', [...gitRepoFlags, 'rev-parse', '--git-path', 'info/sparse-checkout'])
+        const gitPath = sparseCheckoutPathOutput.stdout.trim()
+        const sparseCheckoutPath = path.isAbsolute(gitPath) ? gitPath : path.join(repoDir, gitPath)
+        fs.appendFileSync(sparseCheckoutPath, `\n${config.sparseCheckout.join('\n')}\n`)
+      }
+      core.endGroup()
+    }
+
     core.startGroup(`Check out ${checkoutInfo.pointerRef}`)
     // Checkout the ref
     const smudgeEnv = { GIT_LFS_SKIP_SMUDGE: config.downloadGitLFS ? '0' : '1' }
@@ -182,6 +203,8 @@ interface IInputConfig {
   token: string
   fetchDepth: number
   filter: string
+  sparseCheckout: string[]
+  sparseCheckoutConeMode: boolean
   targetPath: string
   submodules: boolean
   nestedSubmodules: boolean
@@ -232,6 +255,18 @@ function parseInputConfig(): IInputConfig {
 
   result.filter = core.getInput('filter')
   core.debug(`Filter ${result.filter}`)
+
+  const sparseCheckoutInput = core.getInput('sparse-checkout')
+  result.sparseCheckout = sparseCheckoutInput
+    ? sparseCheckoutInput
+        .split('\n')
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+    : []
+  core.debug(`sparseCheckout = ${JSON.stringify(result.sparseCheckout)}`)
+
+  result.sparseCheckoutConeMode = core.getInput('sparse-checkout-cone-mode').toUpperCase() !== 'FALSE'
+  core.debug(`sparseCheckoutConeMode = ${result.sparseCheckoutConeMode}`)
 
   result.targetPath = core.getInput('path')
   core.debug(`Path ${result.targetPath}`)
