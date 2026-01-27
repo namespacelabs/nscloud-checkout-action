@@ -32721,7 +32721,8 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
                 // This allows gitignore-style patterns and excludes root files when patterns use "/" prefix.
                 await execWithGitEnv('git', [...gitRepoFlags, 'config', 'core.sparseCheckout', 'true'], 1);
                 const sparseCheckoutPathOutput = await getExecOutputWithGitEnv('git', [...gitRepoFlags, 'rev-parse', '--git-path', 'info/sparse-checkout']);
-                const sparseCheckoutPath = path.join(repoDir, sparseCheckoutPathOutput.stdout.trim());
+                const gitPath = sparseCheckoutPathOutput.stdout.trim();
+                const sparseCheckoutPath = path.isAbsolute(gitPath) ? gitPath : path.join(repoDir, gitPath);
                 fs.appendFileSync(sparseCheckoutPath, `\n${config.sparseCheckout.join('\n')}\n`);
             }
             core.endGroup();
