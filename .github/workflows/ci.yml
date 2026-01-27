@@ -30,9 +30,9 @@ jobs:
 
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Github checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: github-current
           ref: ${{ matrix.ref }}
@@ -51,7 +51,7 @@ jobs:
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Basic checkout tests
         uses: ./
         with: 
@@ -66,7 +66,7 @@ jobs:
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Checkout side by side 1
         uses: ./
         with:
@@ -93,7 +93,7 @@ jobs:
       - nscloud-git-mirror-5gb
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Checkout LFS
         uses: ./
         with:
@@ -117,7 +117,7 @@ jobs:
           - recursive
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Checkout submodules=${{ matrix.variant }}
         uses: ./
         with:
@@ -132,7 +132,7 @@ jobs:
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Namespace Checkout
         uses: ./
         with:
@@ -157,7 +157,7 @@ jobs:
           - true
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Check out main
         uses: ./
         with:
@@ -184,7 +184,7 @@ jobs:
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Checkout with tracing
         uses: ./
         with:
@@ -202,7 +202,7 @@ jobs:
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Checkout orphaned commit by SHA
         uses: ./
         with:
@@ -226,9 +226,9 @@ jobs:
           - false
     steps:
       - name: Check out action
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
       - name: Github sparse checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           path: github-sparse
           sparse-checkout: |
