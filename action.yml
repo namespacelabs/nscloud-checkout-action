@@ -63,6 +63,17 @@ inputs:
     description: 'Partially clone against a given filter.'
     default: ""
 
+  sparse-checkout:
+    description: >
+      Do a sparse checkout on given patterns.
+      Each pattern should be separated with new lines.
+    default: ""
+
+  sparse-checkout-cone-mode:
+    description: >
+      Specifies whether to use cone-mode when doing a sparse checkout.
+    default: "true"
+
   max-attempts:
     description: 'Maximum number of attempts for git network operations. Set to 1 to disable retries.'
     default: "3"

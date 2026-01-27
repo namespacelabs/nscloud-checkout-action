@@ -214,3 +214,34 @@ jobs:
         run: |
           test -f orphan/orphan-test.txt
           grep -q "This commit will be orphaned" orphan/orphan-test.txt
+
+  sparse-checkout:
+    name: Sparse checkout (cone=${{ matrix.cone-mode }})
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    strategy:
+      fail-fast: false
+      matrix:
+        cone-mode:
+          - true
+          - false
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v4
+      - name: Github sparse checkout
+        uses: actions/checkout@v4
+        with:
+          path: github-sparse
+          sparse-checkout: |
+            src
+            .github
+          sparse-checkout-cone-mode: ${{ matrix.cone-mode }}
+      - name: Namespace sparse checkout
+        uses: ./
+        with:
+          path: nscloud-sparse
+          sparse-checkout: |
+            src
+            .github
+          sparse-checkout-cone-mode: ${{ matrix.cone-mode }}
+      - name: Compare sparse checkouts
+        run: .github/tests/verify-sparse-checkout.sh github-sparse nscloud-sparse

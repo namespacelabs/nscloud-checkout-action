@@ -32706,6 +32706,16 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
             const alternatesPath = path.join(repoDir, '.git/objects/info/alternates');
             fs.writeFileSync(alternatesPath, path.join(mirrorDir, 'objects'));
         }
+        // Configure sparse checkout if requested
+        if (config.sparseCheckout.length > 0) {
+            core.startGroup('Configure sparse checkout');
+            await execWithGitEnv('git', [...gitRepoFlags, 'sparse-checkout', 'init', '--cone'], 1);
+            if (!config.sparseCheckoutConeMode) {
+                await execWithGitEnv('git', [...gitRepoFlags, 'config', 'core.sparseCheckoutCone', 'false'], 1);
+            }
+            await execWithGitEnv('git', [...gitRepoFlags, 'sparse-checkout', 'set', ...config.sparseCheckout], 1);
+            core.endGroup();
+        }
         core.startGroup(`Check out ${checkoutInfo.pointerRef}`);
         // Checkout the ref
         const smudgeEnv = { GIT_LFS_SKIP_SMUDGE: config.downloadGitLFS ? '0' : '1' };
@@ -32772,6 +32782,16 @@ function parseInputConfig() {
     core.debug(`Depth ${result.fetchDepth}`);
     result.filter = core.getInput('filter');
     core.debug(`Filter ${result.filter}`);
+    const sparseCheckoutInput = core.getInput('sparse-checkout');
+    result.sparseCheckout = sparseCheckoutInput
+        ? sparseCheckoutInput
+            .split('\n')
+            .map(s => s.trim())
+            .filter(s => s.length > 0)
+        : [];
+    core.debug(`sparseCheckout = ${JSON.stringify(result.sparseCheckout)}`);
+    result.sparseCheckoutConeMode = core.getInput('sparse-checkout-cone-mode').toUpperCase() !== 'FALSE';
+    core.debug(`sparseCheckoutConeMode = ${result.sparseCheckoutConeMode}`);
     result.targetPath = core.getInput('path');
     core.debug(`Path ${result.targetPath}`);
     // Submodules
