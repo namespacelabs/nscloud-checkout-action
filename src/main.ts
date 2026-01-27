@@ -139,13 +139,18 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
       fs.writeFileSync(alternatesPath, path.join(mirrorDir, 'objects'))
     }
 
-    // Configure sparse checkout if requested
+    // Configure sparse checkout if requested.
+    // Implementation matches actions/checkout to ensure identical behavior:
+    // https://github.com/actions/checkout/blob/main/src/git-command-manager.ts#L202-L221
     if (config.sparseCheckout.length > 0) {
       core.startGroup('Configure sparse checkout')
       if (config.sparseCheckoutConeMode) {
+        // Cone mode: `git sparse-checkout set` uses cone mode by default in git 2.37+
+        // and does NOT include root directory files unless "." is specified.
         await execWithGitEnv('git', [...gitRepoFlags, 'sparse-checkout', 'set', ...config.sparseCheckout], 1)
       } else {
-        // Non-cone mode: write patterns directly to sparse-checkout file
+        // Non-cone mode: write patterns directly to sparse-checkout file.
+        // This allows gitignore-style patterns and excludes root files when patterns use "/" prefix.
         await execWithGitEnv('git', [...gitRepoFlags, 'config', 'core.sparseCheckout', 'true'], 1)
         const sparseCheckoutPath = path.join(repoDir, '.git/info/sparse-checkout')
         fs.appendFileSync(sparseCheckoutPath, `\n${config.sparseCheckout.join('\n')}\n`)
