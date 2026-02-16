@@ -54,7 +54,7 @@ jobs:
         uses: actions/checkout@v6
       - name: Basic checkout tests
         uses: ./
-        with: 
+        with:
           ref: test-data/v2/basic
           path: basic
       - name: Verify basic
@@ -245,3 +245,89 @@ jobs:
           sparse-checkout-cone-mode: ${{ matrix.cone-mode }}
       - name: Compare sparse checkouts
         run: .github/tests/verify-sparse-checkout.sh github-sparse nscloud-sparse
+
+  container-checkout:
+    name: Checkout in container (root)
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    container:
+      image: ubuntu:24.04
+      env:
+        NSC_GIT_MIRROR: ${{ env.NSC_GIT_MIRROR }}
+      volumes:
+        - /gitmirror:/gitmirror
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y git
+      - name: Check out action
+        uses: actions/checkout@v6
+      - name: Checkout in container
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: container-checkout
+      - name: Verify checkout
+        run: |
+          test -d container-checkout
+          test -f container-checkout/README.md
+          echo "Container checkout successful (running as uid=$(id -u))"
+
+  container-permissions:
+    name: Container permission fix (NSL-7371)
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v6
+
+      # First, run the checkout normally to populate the mirror as the runner user.
+      - name: Checkout (populate mirror)
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: before-break
+
+      - name: Verify first checkout
+        id: verify-first
+        run: |
+          test -d before-break
+          test -f before-break/README.md
+
+          # The action writes <mirrorDir>/objects to .git/objects/info/alternates
+          MIRROR_DIR=$(dirname "$(cat before-break/.git/objects/info/alternates)")
+          echo "mirror-dir=${MIRROR_DIR}" >> "$GITHUB_OUTPUT"
+
+      # Simulate a previous container run by chown-ing the mirror to root.
+      - name: Break mirror permissions (simulate container run)
+        run: |
+          MIRROR_DIR="${{ steps.verify-first.outputs.mirror-dir }}"
+          echo "Mirror dir: ${MIRROR_DIR}"
+          sudo chown -R root:root "${MIRROR_DIR}"
+
+          # Verify files are root-owned
+          OWNER=$(stat -c '%u' "${MIRROR_DIR}")
+          echo "Mirror dir owner uid: ${OWNER}"
+          if [ "${OWNER}" != "0" ]; then
+            echo "ERROR: Expected mirror to be root-owned after chown"
+            exit 1
+          fi
+
+      # Run the checkout action again — this must fix permissions and succeed.
+      - name: Checkout (should fix permissions and succeed)
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: after-fix
+
+      - name: Verify checkout and permissions
+        run: |
+          test -d after-fix
+          test -f after-fix/README.md
+
+          # Verify mirror is now owned by the runner user
+          MIRROR_DIR="${{ steps.verify-first.outputs.mirror-dir }}"
+          OWNER=$(stat -c '%u' "${MIRROR_DIR}")
+          EXPECTED=$(id -u)
+          if [ "${OWNER}" != "${EXPECTED}" ]; then
+            echo "ERROR: Mirror still owned by uid=${OWNER}, expected uid=${EXPECTED}"
+            exit 1
+          fi
+          echo "Permission fix test passed"
