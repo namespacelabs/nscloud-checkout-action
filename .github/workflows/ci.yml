@@ -54,7 +54,7 @@ jobs:
         uses: actions/checkout@v6
       - name: Basic checkout tests
         uses: ./
-        with: 
+        with:
           ref: test-data/v2/basic
           path: basic
       - name: Verify basic
@@ -245,3 +245,73 @@ jobs:
           sparse-checkout-cone-mode: ${{ matrix.cone-mode }}
       - name: Compare sparse checkouts
         run: .github/tests/verify-sparse-checkout.sh github-sparse nscloud-sparse
+
+  container-checkout:
+    name: Checkout in container (root)
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    container:
+      image: ubuntu:24.04
+      env:
+        NSC_GIT_MIRROR: ${{ env.NSC_GIT_MIRROR }}
+      volumes:
+        - /gitmirror:/gitmirror
+    steps:
+      - name: Install git
+        run: apt-get update && apt-get install -y git
+      - name: Check out action
+        uses: actions/checkout@v6
+      - name: Checkout in container
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: container-checkout
+      - name: Verify checkout
+        run: |
+          test -d container-checkout
+          test -f container-checkout/README.md
+          echo "Container checkout successful (running as uid=$(id -u))"
+
+          # Root (uid 0) should use a uid-prefixed cache path: v2/0/<repo>
+          MIRROR_DIR=$(dirname "$(cat container-checkout/.git/objects/info/alternates)")
+          echo "Container mirror dir: ${MIRROR_DIR}"
+          if ! echo "${MIRROR_DIR}" | grep -q '/v2/uid-0/'; then
+            echo "ERROR: root should use uid-prefixed cache path, got: ${MIRROR_DIR}"
+            exit 1
+          fi
+
+  container-cache-isolation:
+    name: Container uses separate cache (NSL-7371)
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v6
+
+      # Run checkout as the runner user (uid 1001) — should use v2/<repo> path.
+      - name: Checkout as runner
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: runner-checkout
+
+      - name: Verify runner cache path
+        id: runner
+        run: |
+          test -d runner-checkout
+          test -f runner-checkout/README.md
+
+          # Ensure we're actually running as uid 1001
+          ACTUAL_UID=$(id -u)
+          if [ "${ACTUAL_UID}" != "1001" ]; then
+            echo "ERROR: Expected uid 1001, got ${ACTUAL_UID}"
+            exit 1
+          fi
+
+          MIRROR_DIR=$(dirname "$(cat runner-checkout/.git/objects/info/alternates)")
+          echo "mirror-dir=${MIRROR_DIR}" >> "$GITHUB_OUTPUT"
+          echo "Runner mirror dir: ${MIRROR_DIR}"
+
+          # uid 1001 should use the legacy path without uid prefix
+          if echo "${MIRROR_DIR}" | grep -q '/v2/uid-1001/'; then
+            echo "ERROR: uid 1001 should not have uid in cache path"
+            exit 1
+          fi
