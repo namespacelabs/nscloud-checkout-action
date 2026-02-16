@@ -42,7 +42,22 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     core.endGroup()
 
     core.startGroup('Update checkout cache')
-    // Prepare mirror if does not exist
+    const mirrorRoot = path.join(gitMirrorPath, version)
+    core.debug(`Mirror root: ${mirrorRoot}`)
+    try {
+      if (!fs.existsSync(mirrorRoot)) {
+        fs.mkdirSync(mirrorRoot)
+        fs.chmodSync(mirrorRoot, 0o777)
+      } else {
+        // Ensure the version root (e.g. v2/) is writable by all users, so that other uids
+        // can create their own cache subdirectories.
+        await ensureMirrorRootWritable(mirrorRoot)
+      }
+    } catch (error) {
+      core.warning(`Failed to prepare mirror root ${mirrorRoot}: ${error instanceof Error ? error.message : error}`)
+    }
+
+    // Prepare mirror if it does not exist
     // Layout depends on version:
     // v1/ path was introduced with v1 tag because the way we cloned the mirror in v0 was not
     // compatible with caching submodules, so we had to change the mirror repo directory to force a re-clone.
@@ -50,7 +65,9 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     // repo with submodules, in that case caching did not happen, so we restore in v2 the mirror repo as is used to be in v0
     // and not attempt to cache also recursive submodules.
     const remoteURL = `https://token@github.com/${config.owner}/${config.repo}.git`
-    const mirrorDir = path.join(gitMirrorPath, `${version}/${config.owner}-${config.repo}`)
+    core.debug(`Remote URL: ${remoteURL}`)
+    const mirrorDir = path.join(mirrorRoot, mirrorSubdir(config))
+    core.debug(`Mirror dir: ${mirrorDir}`)
     if (!fs.existsSync(mirrorDir)) {
       fs.mkdirSync(mirrorDir, { recursive: true })
       await execWithGitEnv('git', ['clone', '--mirror', '--', remoteURL, mirrorDir], config.maxAttempts)
@@ -415,7 +432,14 @@ async function configGitAuthForSubmodules(token: string, repoDir: string) {
 
   await execWithGitEnv(
     'git',
-    ['submodule', 'foreach', '--recursive', 'sh', '-c', `git config --local --add 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ${basicCredential}'`],
+    [
+      'submodule',
+      'foreach',
+      '--recursive',
+      'sh',
+      '-c',
+      `git config --local --add 'http.https://github.com/.extraheader' 'AUTHORIZATION: basic ${basicCredential}'`
+    ],
     1,
     { cwd: repoDir ? repoDir : undefined }
   )
@@ -437,9 +461,14 @@ async function configGitAuth(token: string, opts: { global: true } | { repoDir: 
 
   // (NSL-2981) Remove previous extra auth header if any
   await execWithGitEnv('git', ['config', configSelector, '--unset-all', 'http.https://github.com/.extraheader'], 1, { ignoreReturnCode: true, cwd })
-  await execWithGitEnv('git', ['config', configSelector, '--add', 'http.https://github.com/.extraheader', `AUTHORIZATION: basic ${basicCredential}`], 1, {
-    cwd
-  })
+  await execWithGitEnv(
+    'git',
+    ['config', configSelector, '--add', 'http.https://github.com/.extraheader', `AUTHORIZATION: basic ${basicCredential}`],
+    1,
+    {
+      cwd
+    }
+  )
   await execWithGitEnv('git', ['config', configSelector, '--add', 'url.https://github.com/.insteadOf', 'git@github.com:'], 1, { cwd })
 }
 
@@ -449,6 +478,33 @@ async function cleanupGitAuth(opts: { global: true } | { repoDir: string }) {
 
   await execWithGitEnv('git', ['config', configSelector, '--unset-all', 'http.https://github.com/.extraheader'], 1, { ignoreReturnCode: true, cwd })
   await execWithGitEnv('git', ['config', configSelector, '--unset-all', 'url.https://github.com/.insteadOf'], 1, { ignoreReturnCode: true, cwd })
+}
+
+// The default runner user uid. This user retains the original cache path (without uid prefix)
+// to avoid cache resets for existing users.
+const defaultRunnerUid = 1001
+
+function mirrorSubdir(config: IInputConfig): string {
+  const repo = `${config.owner}-${config.repo}`
+  const uid = process.getuid?.()
+
+  if (uid === undefined || uid === defaultRunnerUid) {
+    // For default runner user (or unknown), skip the uid-x segment
+    // Backwards compatible with caches before this change for the runner user
+    return `${repo}`
+  }
+
+  return `uid-${uid}/${repo}`
+}
+
+async function ensureMirrorRootWritable(mirrorRoot: string): Promise<void> {
+  try {
+    fs.accessSync(mirrorRoot, fs.constants.W_OK)
+    core.debug('Mirror root permissions OK')
+  } catch {
+    core.info(`Adjusting permissions of mirror root ${mirrorRoot}`)
+    await exec.exec('sudo', ['chmod', '777', mirrorRoot])
+  }
 }
 
 function getGitExecOptions(options?: exec.ExecOptions): exec.ExecOptions {
