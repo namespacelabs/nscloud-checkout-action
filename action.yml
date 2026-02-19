@@ -82,6 +82,15 @@ inputs:
     description: 'Enable git tracing (GIT_TRACE) for debugging.'
     default: "false"
 
+  mirror-refspec:
+    description: >
+      Refspecs to use when fetching into the Git mirror cache. Each refspec
+      should be on a separate line. When not specified, the mirror tracks all
+      refs (the default `git clone --mirror` behavior). Narrowing this to
+      e.g. only branches and tags can significantly speed up the mirror fetch
+      for repositories with many pull requests.
+    default: ""
+
 runs:
   using: node20
   main: dist/index.js

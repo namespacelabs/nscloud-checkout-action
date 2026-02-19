@@ -74,11 +74,14 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     }
 
     // Fetch commits for mirror
-    await execWithGitEnv(
-      'git',
-      ['-c', 'protocol.version=2', '--git-dir', mirrorDir, 'fetch', '--no-recurse-submodules', '--prune', '--prune-tags', 'origin'],
-      config.maxAttempts
-    )
+    const mirrorFetchArgs = ['-c', 'protocol.version=2', '--git-dir', mirrorDir, 'fetch', '--no-recurse-submodules', '--prune']
+    if (config.mirrorRefspec.length === 0 || config.mirrorRefspec.some(rs => rs.includes('refs/tags/'))) {
+      mirrorFetchArgs.push('--prune-tags')
+    }
+    mirrorFetchArgs.push('origin')
+    mirrorFetchArgs.push(...config.mirrorRefspec)
+
+    await execWithGitEnv('git', mirrorFetchArgs, config.maxAttempts)
 
     // If Git LFS is required, download objects in cache
     if (config.downloadGitLFS) {
@@ -231,6 +234,7 @@ interface IInputConfig {
   downloadGitLFS: boolean
   maxAttempts: number
   trace: boolean
+  mirrorRefspec: string[]
 }
 
 function parseInputConfig(): IInputConfig {
@@ -336,6 +340,15 @@ function parseInputConfig(): IInputConfig {
 
   result.trace = core.getInput('trace').toUpperCase() === 'TRUE'
   core.debug(`trace = ${result.trace}`)
+
+  const mirrorRefspecInput = core.getInput('mirror-refspec')
+  result.mirrorRefspec = mirrorRefspecInput
+    ? mirrorRefspecInput
+        .split('\n')
+        .map(s => s.trim())
+        .filter(s => s.length > 0)
+    : []
+  core.debug(`mirrorRefspec = ${JSON.stringify(result.mirrorRefspec)}`)
 
   return result
 }
