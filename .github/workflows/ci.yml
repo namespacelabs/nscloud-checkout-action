@@ -315,3 +315,37 @@ jobs:
             echo "ERROR: uid 1001 should not have uid in cache path"
             exit 1
           fi
+
+  mirror-refspec:
+    name: Mirror with custom refspec
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    strategy:
+      fail-fast: false
+      matrix:
+        ref:
+          - ""
+          - "main"
+          - "refs/tags/v7.1.0"
+        fetch-depth:
+          - 0
+          - 1
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v6
+      - name: Github checkout (reference)
+        uses: actions/checkout@v6
+        with:
+          path: github-ref
+          ref: ${{ matrix.ref }}
+          fetch-depth: ${{ matrix.fetch-depth }}
+      - name: Namespace checkout with mirror-refspec
+        uses: ./
+        with:
+          path: nscloud-refspec
+          ref: ${{ matrix.ref }}
+          fetch-depth: ${{ matrix.fetch-depth }}
+          mirror-refspec: |
+            +refs/heads/*:refs/heads/*
+            +refs/tags/*:refs/tags/*
+      - name: Compare checkouts
+        run: .github/tests/compare-checkouts.sh github-ref nscloud-refspec dist/index.js
