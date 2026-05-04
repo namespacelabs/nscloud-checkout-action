@@ -231,6 +231,7 @@ interface IInputConfig {
   downloadGitLFS: boolean
   maxAttempts: number
   trace: boolean
+  cancelStallingGitOperations: boolean
 }
 
 function parseInputConfig(): IInputConfig {
@@ -336,6 +337,11 @@ function parseInputConfig(): IInputConfig {
 
   result.trace = core.getInput('trace').toUpperCase() === 'TRUE'
   core.debug(`trace = ${result.trace}`)
+
+  // Default true: abort stalled HTTP transfers via libcurl low-speed limit so
+  // the existing retry path can take over instead of hanging indefinitely.
+  result.cancelStallingGitOperations = core.getInput('cancel-stalling-git-operations').toUpperCase() !== 'FALSE'
+  core.debug(`cancelStallingGitOperations = ${result.cancelStallingGitOperations}`)
 
   return result
 }
@@ -517,6 +523,21 @@ function getGitExecOptions(options?: exec.ExecOptions): exec.ExecOptions {
   if (traceEnabled) {
     gitEnv.GIT_TRACE = '1'
     gitEnv.GIT_TRACE_PACK_ACCESS = '1'
+  }
+
+  // Abort HTTP transfers stalled below 1 KB/s for 60s so the existing retry path
+  // (max-attempts) takes over instead of the operation hanging forever. The env
+  // vars are inherited by every git child process, including those spawned by
+  // `git submodule update` and by `nsc git-checkout`. Defer to user-provided
+  // values in process.env so workflow-level overrides win.
+  const cancelStallingEnabled = core.getInput('cancel-stalling-git-operations').toUpperCase() !== 'FALSE'
+  if (cancelStallingEnabled) {
+    if (!process.env.GIT_HTTP_LOW_SPEED_LIMIT) {
+      gitEnv.GIT_HTTP_LOW_SPEED_LIMIT = '1000'
+    }
+    if (!process.env.GIT_HTTP_LOW_SPEED_TIME) {
+      gitEnv.GIT_HTTP_LOW_SPEED_TIME = '60'
+    }
   }
 
   return {
