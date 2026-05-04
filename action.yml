@@ -82,6 +82,11 @@ inputs:
     description: 'Enable git tracing (GIT_TRACE) for debugging.'
     default: "false"
 
+  cancel-stalling-git-operations:
+    description: >
+      Abort git HTTP transfers that stall (below ~1 KB/s for 60s), so the inbuilt retry logic kicks in.
+    default: "true"
+
 runs:
   using: node24
   main: dist/index.js
