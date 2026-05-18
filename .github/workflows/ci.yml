@@ -9,6 +9,22 @@ on:
   workflow_dispatch:
 
 jobs:
+  unit-tests:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v6
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run jest tests
+        run: npx jest --ci
+
   compare-github:
     name: Diff to OG ${{matrix.ref}} d=${{ matrix.fetch-depth }}
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
@@ -82,28 +98,53 @@ jobs:
         run: .github/tests/verify-side-by-side.sh
 
   lfs:
-    name: LFS example
+    name: LFS mode=${{ matrix.lfs-mode }} on ${{ matrix.runs-on }}
     strategy:
+      fail-fast: false
       matrix:
         runs-on:
           - nscloud-ubuntu-22.04-amd64-2x4
           - nscloud-macos-sequoia-stable-arm64-4x7
+        lfs-mode:
+          - default
+          - ref
+          - recent
     runs-on:
       - "${{ matrix.runs-on }}-with-cache"
       - nscloud-git-mirror-5gb
     steps:
       - name: Check out action
         uses: actions/checkout@v6
-      - name: Checkout LFS
+      - name: Checkout LFS (mode=${{ matrix.lfs-mode }})
         uses: ./
         with:
           repository: namespacelabs/nscloud-checkout-action # hardcoded, otherwise doesn't work from a fork
           ref: test-data/v2/lfs
           path: lfs
           lfs: true
-      - name: Verify LFS
+          lfs-mode: ${{ matrix.lfs-mode }}
+      - name: Verify LFS (mode=${{ matrix.lfs-mode }})
         shell: bash
-        run: .github/tests/verify-lfs.sh
+        run: .github/tests/verify-lfs.sh lfs
+
+  lfs-invalid-mode:
+    name: LFS with invalid mode falls back to default
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v6
+      - name: Checkout LFS with bogus mode
+        uses: ./
+        with:
+          repository: namespacelabs/nscloud-checkout-action
+          ref: test-data/v2/lfs
+          path: lfs
+          lfs: true
+          lfs-mode: not-a-real-mode
+      - name: Verify LFS still works
+        shell: bash
+        # No expected-mode argument: only run the functional checks; we just care that the action did not fail
+        run: .github/tests/verify-lfs.sh lfs
 
   submodules:
     name: Submodules=${{ matrix.variant }}

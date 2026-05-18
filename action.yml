@@ -58,7 +58,25 @@ inputs:
   lfs:
     description: 'Whether to download and cache Git-LFS files'
     default: "false"
-    
+
+  lfs-mode:
+    description: >
+      Controls how LFS objects are pre-fetched into the cached Git mirror.
+      Only takes effect when `lfs: true`.
+
+
+      - `default`: pre-fetch LFS for every ref the mirror's git fetch just
+        updated. Best across-ref cache reuse on warm mirrors, but on a cold
+        cache this downloads the entire repository's LFS history across all
+        branches and tags, which can be slow.
+
+
+      - `ref`: pre-fetch LFS only for the ref being checked out.
+
+
+      - `recent`: pre-fetch LFS for refs updated in the last `lfs.fetchrecentrefsdays` (default 7) days.
+    default: "default"
+
   filter:
     description: 'Partially clone against a given filter.'
     default: ""

@@ -3,6 +3,7 @@ import * as github from '@actions/github'
 import * as exec from '@actions/exec'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
+import { LFSMode, buildMirrorLFSArgs, lfsModes, parseLFSMode } from './lfs'
 
 const version = 'v2'
 
@@ -80,9 +81,12 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
       config.maxAttempts
     )
 
-    // If Git LFS is required, download objects in cache
+    // Resolve references against the mirror
+    const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir)
+
     if (config.downloadGitLFS) {
-      await execWithGitEnv('git', ['--git-dir', mirrorDir, 'lfs', 'fetch', 'origin'], config.maxAttempts)
+      const mirrorLFSArgs = buildMirrorLFSArgs(mirrorDir, config.lfsMode, checkoutInfo.originalRef)
+      await execWithGitEnv('git', mirrorLFSArgs, config.maxAttempts)
     }
     core.endGroup()
 
@@ -93,8 +97,6 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     }
 
     core.startGroup('Fetch using the cache')
-    // Resolve references.
-    const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir)
 
     // Prepare repo dir
     let repoDir = workspacePath
@@ -229,6 +231,7 @@ interface IInputConfig {
   dissociateSubmodules: boolean
   persistCredentials: boolean
   downloadGitLFS: boolean
+  lfsMode: LFSMode
   maxAttempts: number
   trace: boolean
   cancelStallingGitOperations: boolean
@@ -331,6 +334,17 @@ function parseInputConfig(): IInputConfig {
     result.downloadGitLFS = false
   }
   core.debug(`downloadGitLFS = ${result.downloadGitLFS}`)
+
+  // LFS prefetch strategy for the mirror cache.
+  const lfsModeInput = core.getInput('lfs-mode')
+  const parsedLFSMode = parseLFSMode(lfsModeInput)
+  if (parsedLFSMode) {
+    result.lfsMode = parsedLFSMode
+  } else {
+    core.warning(`Unknown lfs-mode '${lfsModeInput}', falling back to 'default'. Valid values: ${lfsModes.join(', ')}`)
+    result.lfsMode = 'default'
+  }
+  core.debug(`lfsMode = ${result.lfsMode}`)
 
   result.maxAttempts = Math.max(1, Number(core.getInput('max-attempts')) || 3)
   core.debug(`maxAttempts = ${result.maxAttempts}`)
