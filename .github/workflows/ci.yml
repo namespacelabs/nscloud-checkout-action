@@ -442,3 +442,101 @@ jobs:
             echo "ERROR: uid 1001 should not have uid in cache path"
             exit 1
           fi
+
+  skip-maintenance:
+    name: skip-maintenance suppresses commit-graph write
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v6
+
+      # First run with maintenance enabled (default). The post-fetch step
+      # should run `git commit-graph write --reachable --split`, leaving
+      # either a `commit-graph` file or a `commit-graphs/` chain dir in the
+      # mirror.
+      - name: Warm mirror with maintenance enabled
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: warm
+
+      - name: Capture mirror dir + assert commit-graph was written
+        id: warm
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f warm/README.md
+          MIRROR_DIR=$(dirname "$(cat warm/.git/objects/info/alternates)")
+          echo "mirror-dir=${MIRROR_DIR}" >> "$GITHUB_OUTPUT"
+          echo "Mirror dir: ${MIRROR_DIR}"
+          if [ ! -e "${MIRROR_DIR}/info/commit-graph" ] && \
+             [ ! -d "${MIRROR_DIR}/info/commit-graphs" ]; then
+            echo "ERROR: default checkout should have produced a commit-graph in ${MIRROR_DIR}/info/"
+            ls -la "${MIRROR_DIR}/info/" || true
+            exit 1
+          fi
+          echo "OK: commit-graph present after default-maintenance checkout"
+
+      # Clear out the existing commit-graph so a follow-up fetch with
+      # `fetch.writeCommitGraph=true` would regenerate it. If skip-maintenance
+      # truly disables that step, the file/dir must stay absent.
+      - name: Wipe commit-graph from the mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIRROR_DIR="${{ steps.warm.outputs.mirror-dir }}"
+          rm -f  "${MIRROR_DIR}/info/commit-graph"
+          rm -rf "${MIRROR_DIR}/info/commit-graphs"
+          ls -la "${MIRROR_DIR}/info/" || true
+          test ! -e "${MIRROR_DIR}/info/commit-graph"
+          test ! -e "${MIRROR_DIR}/info/commit-graphs"
+
+      - name: Second checkout with skip-maintenance=true
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: skipped
+          skip-maintenance: true
+
+      - name: Verify checkout still works AND no commit-graph was written
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Functional correctness: the second checkout must still succeed.
+          test -f skipped/README.md
+
+          MIRROR_DIR="${{ steps.warm.outputs.mirror-dir }}"
+          # And the post-fetch commit-graph write must have been suppressed.
+          if [ -e "${MIRROR_DIR}/info/commit-graph" ] || \
+             [ -e "${MIRROR_DIR}/info/commit-graphs" ]; then
+            echo "ERROR: skip-maintenance=true should NOT have written a commit-graph"
+            ls -la "${MIRROR_DIR}/info/"
+            exit 1
+          fi
+          echo "OK: commit-graph stayed absent — skip-maintenance suppressed the rewrite"
+
+      # Sanity-check the other direction: when we leave the flag off and run
+      # one more checkout, the commit-graph should reappear. This guards
+      # against the case where some unrelated change makes git stop writing
+      # it for everyone (which would silently invalidate the test above).
+      - name: Third checkout with skip-maintenance=false re-creates commit-graph
+        uses: ./
+        with:
+          ref: test-data/v2/basic
+          path: rewarmed
+          skip-maintenance: false
+
+      - name: Verify commit-graph reappeared
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f rewarmed/README.md
+          MIRROR_DIR="${{ steps.warm.outputs.mirror-dir }}"
+          if [ ! -e "${MIRROR_DIR}/info/commit-graph" ] && \
+             [ ! -d "${MIRROR_DIR}/info/commit-graphs" ]; then
+            echo "ERROR: skip-maintenance=false should have re-written the commit-graph"
+            ls -la "${MIRROR_DIR}/info/" || true
+            exit 1
+          fi
+          echo "OK: commit-graph regenerated when skip-maintenance is off"
+

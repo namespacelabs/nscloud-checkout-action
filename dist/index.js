@@ -11015,12 +11015,26 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         core.debug(`Remote URL: ${remoteURL}`);
         const mirrorDir = path.join(mirrorRoot, mirrorSubdir(config));
         core.debug(`Mirror dir: ${mirrorDir}`);
+        // When skip-mirror-maintenance is set, suppress git's post-fetch auto-gc and commit-graph rewrite.
+        // These run after every fetch by default and on very large mirrors can add minutes of single-threaded CPU + disk I/O even when the actual fetch transferred little data.
+        const mirrorMaintFlags = config.skipMirrorMaintenance ? ['-c', 'gc.auto=0', '-c', 'fetch.writeCommitGraph=false'] : [];
         if (!fs.existsSync(mirrorDir)) {
             fs.mkdirSync(mirrorDir, { recursive: true });
-            await execWithGitEnv('git', ['clone', '--mirror', '--', remoteURL, mirrorDir], config.maxAttempts);
+            await execWithGitEnv('git', [...mirrorMaintFlags, 'clone', '--mirror', '--', remoteURL, mirrorDir], config.maxAttempts);
         }
         // Fetch commits for mirror
-        await execWithGitEnv('git', ['-c', 'protocol.version=2', '--git-dir', mirrorDir, 'fetch', '--no-recurse-submodules', '--prune', '--prune-tags', 'origin'], config.maxAttempts);
+        await execWithGitEnv('git', [
+            ...mirrorMaintFlags,
+            '-c',
+            'protocol.version=2',
+            '--git-dir',
+            mirrorDir,
+            'fetch',
+            '--no-recurse-submodules',
+            '--prune',
+            '--prune-tags',
+            'origin'
+        ], config.maxAttempts);
         // Resolve references against the mirror
         const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir);
         if (config.downloadGitLFS && (0, lfs_1.usesMirrorLFSCache)(config.lfsMode)) {
@@ -11250,6 +11264,9 @@ function parseInputConfig() {
     // the existing retry path can take over instead of hanging indefinitely.
     result.cancelStallingGitOperations = core.getInput('cancel-stalling-git-operations').toUpperCase() !== 'FALSE';
     core.debug(`cancelStallingGitOperations = ${result.cancelStallingGitOperations}`);
+    // Opt-in: skip git's post-fetch maintenance (auto-gc + commit-graph write)
+    result.skipMirrorMaintenance = core.getInput('skip-maintenance').toUpperCase() === 'TRUE';
+    core.debug(`skipMirrorMaintenance = ${result.skipMirrorMaintenance}`);
     return result;
 }
 async function getCheckoutInfo(ref, commit, depth, mirrorDir) {
