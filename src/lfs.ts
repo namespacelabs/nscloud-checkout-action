@@ -4,8 +4,21 @@
  * ESM-only `@octokit/*` transitive deps.
  */
 
-export type LFSMode = 'default' | 'ref' | 'recent'
-export const lfsModes: readonly LFSMode[] = ['default', 'ref', 'recent']
+export type LFSMode = 'default' | 'ref' | 'recent' | 'skip-cache'
+export const lfsModes: readonly LFSMode[] = ['default', 'ref', 'recent', 'skip-cache']
+
+/**
+ * `skip-cache` is the only mode that does NOT populate the mirror's LFS
+ * storage and does NOT redirect the workdir's `lfs.storage` to the mirror —
+ * every byte is pulled fresh from the remote into the workdir's own
+ * `.git/lfs` store. Use it for one-off / huge LFS payloads that would
+ * pointlessly fill the persistent cache volume.
+ */
+export type LFSMirrorMode = Exclude<LFSMode, 'skip-cache'>
+export const lfsMirrorModes: readonly LFSMirrorMode[] = ['default', 'ref', 'recent']
+export function usesMirrorLFSCache(mode: LFSMode): mode is LFSMirrorMode {
+  return mode !== 'skip-cache'
+}
 
 /**
  * Parse an `lfs-mode` action input.
@@ -32,7 +45,7 @@ export function parseLFSMode(input: string): LFSMode | undefined {
  * - `recent`: `git lfs fetch --recent origin` (bounded by `lfs.fetchrecent*`
  *   git config; warms recent activity without unbounded cost).
  */
-export function buildMirrorLFSArgs(mirrorDir: string, lfsMode: LFSMode, mirrorRef: string): string[] {
+export function buildMirrorLFSArgs(mirrorDir: string, lfsMode: LFSMirrorMode, mirrorRef: string): string[] {
   const base = ['--git-dir', mirrorDir, 'lfs', 'fetch']
   switch (lfsMode) {
     case 'ref':
