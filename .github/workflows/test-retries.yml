@@ -11,7 +11,9 @@ on:
 jobs:
   retry-succeeds-after-transient-failures:
     name: Retry succeeds after transient failures
-    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    runs-on:
+      - nscloud-ubuntu-22.04-amd64-2x4-with-cache
+      - nscloud-git-mirror-5gb
     steps:
       - name: Check out action
         uses: actions/checkout@v4
@@ -46,7 +48,10 @@ jobs:
 
   retry-fails-when-disabled:
     name: Retry disabled fails on transient error
-    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    runs-on:
+      - nscloud-ubuntu-22.04-amd64-2x4-with-cache
+      - nscloud-git-mirror-5gb
+      - nscloud-cache-exp-do-not-commit
     steps:
       - name: Check out action
         uses: actions/checkout@v4
