@@ -3,7 +3,7 @@ import * as github from '@actions/github'
 import * as exec from '@actions/exec'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { LFSMode, buildMirrorLFSArgs, lfsModes, parseLFSMode } from './lfs'
+import { LFSMode, buildMirrorLFSArgs, lfsModes, parseLFSMode, usesMirrorLFSCache } from './lfs'
 
 const version = 'v2'
 
@@ -84,7 +84,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     // Resolve references against the mirror
     const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir)
 
-    if (config.downloadGitLFS) {
+    if (config.downloadGitLFS && usesMirrorLFSCache(config.lfsMode)) {
       const mirrorLFSArgs = buildMirrorLFSArgs(mirrorDir, config.lfsMode, checkoutInfo.originalRef)
       await execWithGitEnv('git', mirrorLFSArgs, config.maxAttempts)
     }
@@ -113,7 +113,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     const gitRepoFlags = ['--git-dir', `${repoDir}/.git`, '--work-tree', repoDir]
     await execWithGitEnv('git', [...gitRepoFlags, 'remote', 'add', 'origin', remoteURL], 1)
 
-    if (config.downloadGitLFS && !config.dissociateMainRepo) {
+    if (config.downloadGitLFS && !config.dissociateMainRepo && usesMirrorLFSCache(config.lfsMode)) {
       const mirrorLFSStorage = path.join(mirrorDir, 'lfs')
       await execWithGitEnv('git', [...gitRepoFlags, 'config', 'lfs.storage', mirrorLFSStorage], 1)
     }

@@ -75,6 +75,10 @@ inputs:
 
 
       - `recent`: pre-fetch LFS for refs updated in the last `lfs.fetchrecentrefsdays` (default 7) days.
+
+
+      - `skip-cache`: LFS objects are downloaded fresh from the remote instead of being cached.
+        This is used to debug performance issues and should not be used in production.
     default: "default"
 
   filter:

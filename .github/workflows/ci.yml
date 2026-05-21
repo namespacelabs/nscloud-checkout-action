@@ -158,6 +158,61 @@ jobs:
         shell: bash
         run: .github/tests/verify-lfs.sh lfs-second
 
+  lfs-skip-cache:
+    name: LFS skip-cache bypasses the mirror cache
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v6
+      - name: Checkout with lfs-mode=skip-cache
+        uses: ./
+        with:
+          repository: namespacelabs/nscloud-checkout-action
+          ref: test-data/v2/lfs
+          path: lfs-skip
+          lfs: true
+          lfs-mode: skip-cache
+      - name: Verify LFS file was smudged
+        shell: bash
+        run: .github/tests/verify-lfs.sh lfs-skip
+      - name: Verify mirror LFS dir was NOT populated for the skip-cache run
+        shell: bash
+        run: |
+          set -euo pipefail
+          MIRROR_DIR=$(dirname "$(cat lfs-skip/.git/objects/info/alternates)")
+          echo "Mirror dir: ${MIRROR_DIR}"
+          # The workdir must own the LFS bytes locally, NOT the mirror.
+          OID=$(git -C lfs-skip lfs ls-files --long | awk '{print $1; exit}')
+          test -n "${OID}"
+          WORKDIR_FILE="lfs-skip/.git/lfs/objects/${OID:0:2}/${OID:2:2}/${OID}"
+          if [ ! -f "${WORKDIR_FILE}" ]; then
+            echo "ERROR: skip-cache should leave the LFS payload in the workdir's .git/lfs/objects"
+            echo "       but ${WORKDIR_FILE} is missing — looks like lfs.storage was redirected anyway."
+            exit 1
+          fi
+          echo "OK: workdir owns ${WORKDIR_FILE}"
+      - name: Make the LFS server unreachable
+        run: git config --global lfs.url http://127.0.0.1:1
+      - name: Second skip-cache checkout MUST fail (no mirror reuse possible)
+        id: second
+        continue-on-error: true
+        uses: ./
+        with:
+          repository: namespacelabs/nscloud-checkout-action
+          ref: test-data/v2/lfs
+          path: lfs-skip-2
+          lfs: true
+          lfs-mode: skip-cache
+      - name: Assert second skip-cache checkout failed
+        shell: bash
+        run: |
+          if [ "${{ steps.second.outcome }}" != "failure" ]; then
+            echo "ERROR: skip-cache succeeded with the LFS server unreachable — it must have"
+            echo "       silently fallen back to the mirror cache, defeating the whole point."
+            exit 1
+          fi
+          echo "OK: skip-cache correctly errored out without LFS network access"
+
   lfs-invalid-mode:
     name: LFS with invalid mode falls back to default
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]

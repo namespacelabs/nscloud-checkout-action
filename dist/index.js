@@ -10873,8 +10873,13 @@ function wrappy (fn, cb) {
  * ESM-only `@octokit/*` transitive deps.
  */
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.buildMirrorLFSArgs = exports.parseLFSMode = exports.lfsModes = void 0;
-exports.lfsModes = ['default', 'ref', 'recent'];
+exports.buildMirrorLFSArgs = exports.parseLFSMode = exports.usesMirrorLFSCache = exports.lfsMirrorModes = exports.lfsModes = void 0;
+exports.lfsModes = ['default', 'ref', 'recent', 'skip-cache'];
+exports.lfsMirrorModes = ['default', 'ref', 'recent'];
+function usesMirrorLFSCache(mode) {
+    return mode !== 'skip-cache';
+}
+exports.usesMirrorLFSCache = usesMirrorLFSCache;
 /**
  * Parse an `lfs-mode` action input.
  *
@@ -11018,7 +11023,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         await execWithGitEnv('git', ['-c', 'protocol.version=2', '--git-dir', mirrorDir, 'fetch', '--no-recurse-submodules', '--prune', '--prune-tags', 'origin'], config.maxAttempts);
         // Resolve references against the mirror
         const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir);
-        if (config.downloadGitLFS) {
+        if (config.downloadGitLFS && (0, lfs_1.usesMirrorLFSCache)(config.lfsMode)) {
             const mirrorLFSArgs = (0, lfs_1.buildMirrorLFSArgs)(mirrorDir, config.lfsMode, checkoutInfo.originalRef);
             await execWithGitEnv('git', mirrorLFSArgs, config.maxAttempts);
         }
@@ -11041,7 +11046,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         await execWithGitEnv('git', ['config', '--global', '--add', 'safe.directory', repoDir], 1);
         const gitRepoFlags = ['--git-dir', `${repoDir}/.git`, '--work-tree', repoDir];
         await execWithGitEnv('git', [...gitRepoFlags, 'remote', 'add', 'origin', remoteURL], 1);
-        if (config.downloadGitLFS && !config.dissociateMainRepo) {
+        if (config.downloadGitLFS && !config.dissociateMainRepo && (0, lfs_1.usesMirrorLFSCache)(config.lfsMode)) {
             const mirrorLFSStorage = path.join(mirrorDir, 'lfs');
             await execWithGitEnv('git', [...gitRepoFlags, 'config', 'lfs.storage', mirrorLFSStorage], 1);
         }
