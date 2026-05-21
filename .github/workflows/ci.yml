@@ -127,6 +127,37 @@ jobs:
         shell: bash
         run: .github/tests/verify-lfs.sh lfs
 
+  lfs-cache-reuse:
+    name: LFS cache volume is reused on warm runs
+    runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]
+    steps:
+      - name: Check out action
+        uses: actions/checkout@v6
+      - name: First checkout (warms mirror LFS cache with normal network)
+        uses: ./
+        with:
+          repository: namespacelabs/nscloud-checkout-action # hardcoded, otherwise doesn't work from a fork
+          ref: test-data/v2/lfs
+          path: lfs-first
+          lfs: true
+      - name: Verify first checkout smudged the LFS file
+        shell: bash
+        run: .github/tests/verify-lfs.sh lfs-first
+      - name: Make the LFS server unreachable
+        # `lfs.url` overrides the API endpoint git-lfs talks to. Pointing it
+        # at an unrouteable address forces any real LFS request to fail fast.
+        run: git config --global lfs.url http://127.0.0.1:1
+      - name: Second checkout (must complete without LFS network access)
+        uses: ./
+        with:
+          repository: namespacelabs/nscloud-checkout-action
+          ref: test-data/v2/lfs
+          path: lfs-second
+          lfs: true
+      - name: Verify second checkout smudged the LFS file from cache
+        shell: bash
+        run: .github/tests/verify-lfs.sh lfs-second
+
   lfs-invalid-mode:
     name: LFS with invalid mode falls back to default
     runs-on: [nscloud-ubuntu-22.04-amd64-2x4-with-cache, nscloud-git-mirror-5gb]

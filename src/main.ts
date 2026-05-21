@@ -113,6 +113,11 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     const gitRepoFlags = ['--git-dir', `${repoDir}/.git`, '--work-tree', repoDir]
     await execWithGitEnv('git', [...gitRepoFlags, 'remote', 'add', 'origin', remoteURL], 1)
 
+    if (config.downloadGitLFS && !config.dissociateMainRepo) {
+      const mirrorLFSStorage = path.join(mirrorDir, 'lfs')
+      await execWithGitEnv('git', [...gitRepoFlags, 'config', 'lfs.storage', mirrorLFSStorage], 1)
+    }
+
     // Fetch the refs
     const fetchDepthFlags = config.fetchDepth <= 0 ? [] : ['--depth', config.fetchDepth.toString(), '--no-tags']
     const filterFlags = config.filter === '' ? [] : ['--filter', config.filter]
