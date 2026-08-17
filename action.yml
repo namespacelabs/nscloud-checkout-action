@@ -106,7 +106,7 @@ inputs:
 
   cancel-stalling-git-operations:
     description: >
-      Abort git HTTP transfers that stall (below ~1 KB/s for 60s), so the inbuilt retry logic kicks in.
+      Abort git HTTP transfers that stall (below ~1 KB/s for 3 minutes), so the inbuilt retry logic kicks in.
     default: "true"
 
 runs:

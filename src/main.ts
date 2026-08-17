@@ -538,24 +538,27 @@ function getGitExecOptions(options?: exec.ExecOptions): exec.ExecOptions {
     GCM_INTERACTIVE: 'Never'
   }
 
-  const traceEnabled = core.isDebug() || core.getInput('trace').toUpperCase() === 'TRUE'
+  const traceEnabled = core.isDebug() || core.getInput('trace').toUpperCase() === 'TRUE' || process.env.NSC_CHECKOUT_ACTION_GIT_TRACE === '1'
   if (traceEnabled) {
     gitEnv.GIT_TRACE = '1'
     gitEnv.GIT_TRACE_PACK_ACCESS = '1'
   }
 
-  // Abort HTTP transfers stalled below 1 KB/s for 60s so the existing retry path
+  // Abort HTTP transfers stalled below 1 KB/s for 3 minutes so the existing retry path
   // (max-attempts) takes over instead of the operation hanging forever. The env
   // vars are inherited by every git child process, including those spawned by
-  // `git submodule update` and by `nsc git-checkout`. Defer to user-provided
-  // values in process.env so workflow-level overrides win.
+  // `git submodule update` and by `nsc git-checkout`.
   const cancelStallingEnabled = core.getInput('cancel-stalling-git-operations').toUpperCase() !== 'FALSE'
   if (cancelStallingEnabled) {
-    if (!process.env.GIT_HTTP_LOW_SPEED_LIMIT) {
+    if (process.env.NSC_CHECKOUT_ACTION_GIT_HTTP_LOW_SPEED_LIMIT) {
+      gitEnv.GIT_HTTP_LOW_SPEED_LIMIT = process.env.NSC_CHECKOUT_ACTION_GIT_HTTP_LOW_SPEED_LIMIT
+    } else if (!process.env.GIT_HTTP_LOW_SPEED_LIMIT) {
       gitEnv.GIT_HTTP_LOW_SPEED_LIMIT = '1000'
     }
-    if (!process.env.GIT_HTTP_LOW_SPEED_TIME) {
-      gitEnv.GIT_HTTP_LOW_SPEED_TIME = '60'
+    if (process.env.NSC_CHECKOUT_ACTION_GIT_HTTP_LOW_SPEED_TIME) {
+      gitEnv.GIT_HTTP_LOW_SPEED_TIME = process.env.NSC_CHECKOUT_ACTION_GIT_HTTP_LOW_SPEED_TIME
+    } else if (!process.env.GIT_HTTP_LOW_SPEED_TIME) {
+      gitEnv.GIT_HTTP_LOW_SPEED_TIME = '180'
     }
   }
 
