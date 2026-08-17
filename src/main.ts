@@ -3,7 +3,7 @@ import * as github from '@actions/github'
 import * as exec from '@actions/exec'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
-import { LFSMode, buildMirrorLFSArgs, lfsModes, parseLFSMode, usesMirrorLFSCache } from './lfs'
+import { LFSMode, buildMirrorLFSArgs, lfsModes, parseLFSMode, usesMirrorLFSCache } from './lfs.js'
 
 const version = 'v2'
 
