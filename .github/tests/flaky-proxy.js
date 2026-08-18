@@ -6,8 +6,8 @@
 // Example: node flaky-proxy.js 8888 2
 // This will fail the first 2 CONNECT requests, then proxy normally.
 
-const net = require('net')
-const http = require('http')
+import net from 'node:net'
+import http from 'node:http'
 
 const port = parseInt(process.argv[2], 10) || 8888
 const failCount = parseInt(process.argv[3], 10) || 2

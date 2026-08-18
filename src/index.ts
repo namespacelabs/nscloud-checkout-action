@@ -1,6 +1,6 @@
 /**
  * The entrypoint for the action.
  */
-import { main } from './main'
+import { main } from './main.js'
 
 void main()
