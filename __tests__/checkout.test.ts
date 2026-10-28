@@ -93,41 +93,104 @@ describe('checkout action', () => {
     expect(git(workspace, 'rev-parse', 'refs/tags/stable')).toBe(parent)
   })
 
-  test('pins a moved event tag without creating a branch', () => {
+  test.each(['0', '1'])('rejects a moved event tag at depth %s', depth => {
     env.GITHUB_REF = 'refs/tags/release'
     git(remote, 'commit', '--allow-empty', '-m', 'later')
     git(remote, 'tag', '-a', 'release', '-m', 'release')
 
-    checkout()
-
-    expect(git(workspace, 'rev-parse', 'HEAD')).toBe(queued)
-    expect(git(workspace, 'branch', '--show-current')).toBe('')
-    expect(git(workspace, 'rev-list', '--count', 'HEAD')).toBe('2')
+    expect(() => checkout({ 'fetch-depth': depth })).toThrow()
+    expect(() => git(workspace, 'rev-parse', '--verify', 'HEAD')).toThrow()
   })
 
-  test('keeps an unchanged annotated event tag', () => {
+  test.each(['0', '1'])('keeps an unchanged annotated event tag at depth %s', depth => {
     env.GITHUB_REF = 'refs/tags/release'
     git(remote, 'tag', '-a', 'release', '-m', 'release')
     const tag = git(remote, 'rev-parse', 'refs/tags/release')
 
-    checkout()
+    checkout({ 'fetch-depth': depth })
 
     expect(git(workspace, 'rev-parse', 'HEAD')).toBe(queued)
     expect(git(workspace, 'rev-parse', 'refs/tags/release')).toBe(tag)
+    expect(git(workspace, 'branch', '--show-current')).toBe('')
   })
 
-  test.each(['0', '1'])('checks out an orphaned explicit SHA at depth %s', depth => {
+  test.each([
+    ['0', 'false', ''],
+    ['1', 'false', ''],
+    ['0', 'true', 'blob:none'],
+    ['1', 'true', 'blob:none']
+  ])('checks out an orphaned explicit SHA (depth=%s, dissociate=%s, filter=%s)', (depth, dissociate, filter) => {
     git(remote, 'reset', '--hard', parent)
     git(remote, 'commit', '--allow-empty', '-m', 'later')
 
-    checkout({ ref: queued, 'fetch-depth': depth })
+    checkout({ ref: queued, 'fetch-depth': depth, dissociate, filter })
+    if (dissociate === 'true') fs.rmSync(path.join(root, 'mirror'), { recursive: true })
 
+    expect(fs.readFileSync(path.join(workspace, 'version.txt'), 'utf8')).toBe('queued\n')
     expect(git(workspace, 'rev-parse', 'HEAD')).toBe(queued)
+    expect(git(workspace, 'show', 'HEAD:version.txt')).toBe('queued')
     expect(git(workspace, 'branch', '--show-current')).toBe('')
     expect(git(workspace, 'rev-list', '--count', 'HEAD')).toBe(depth === '0' ? '2' : '1')
   })
 
-  test('an explicit branch still follows its latest tip', () => {
+  test('checks out a newly orphaned commit with origin unavailable after mirror synchronization', () => {
+    checkout()
+    const mirror = path.dirname(fs.readFileSync(path.join(workspace, '.git/objects/info/alternates'), 'utf8').trim())
+
+    fs.writeFileSync(path.join(remote, 'version.txt'), 'queued-after-warm\n')
+    git(remote, 'commit', '-am', 'queued after warm')
+    const expected = git(remote, 'rev-parse', 'HEAD')
+    git(remote, 'reset', '--hard', parent)
+    git(remote, 'commit', '--allow-empty', '-m', 'later')
+
+    const serveOnce = path.join(root, 'serve-once')
+    fs.writeFileSync(serveOnce, '#!/bin/sh\nset -e\ngit upload-pack "$@"\nmv "$1" "$1.offline"\n', { mode: 0o755 })
+    git(mirror, 'config', 'remote.origin.uploadpack', serveOnce)
+
+    workspace = path.join(root, 'second-workspace')
+    fs.mkdirSync(workspace)
+    env.GITHUB_WORKSPACE = workspace
+    env.GITHUB_SHA = expected
+    checkout({ dissociate: 'true' })
+    fs.rmSync(path.join(root, 'mirror'), { recursive: true })
+
+    expect(fs.existsSync(remote)).toBe(false)
+    expect(git(workspace, 'rev-parse', 'HEAD')).toBe(expected)
+    expect(git(workspace, 'show', 'HEAD:version.txt')).toBe('queued-after-warm')
+    expect(fs.readFileSync(path.join(workspace, 'version.txt'), 'utf8')).toBe('queued-after-warm\n')
+  })
+
+  test('refreshes a warm mirror after rewritten and deleted refs and keeps origin usable', () => {
+    checkout()
+
+    git(remote, 'reset', '--hard', parent)
+    fs.writeFileSync(path.join(remote, 'version.txt'), 'rewritten\n')
+    git(remote, 'add', 'version.txt')
+    git(remote, 'commit', '-m', 'rewritten')
+    const rewritten = git(remote, 'rev-parse', 'HEAD')
+    git(remote, 'tag', '-f', 'stable')
+    git(remote, 'branch', '-D', 'other')
+
+    workspace = path.join(root, 'second-workspace')
+    fs.mkdirSync(workspace)
+    env.GITHUB_WORKSPACE = workspace
+    env.GITHUB_SHA = rewritten
+    checkout()
+
+    expect(fs.readFileSync(path.join(workspace, 'version.txt'), 'utf8')).toBe('rewritten\n')
+    expect(git(workspace, 'rev-parse', 'HEAD')).toBe(rewritten)
+    expect(git(workspace, 'rev-parse', 'refs/tags/stable')).toBe(rewritten)
+    expect(() => git(workspace, 'rev-parse', '--verify', 'refs/remotes/origin/other')).toThrow()
+
+    git(remote, 'checkout', '-b', 'subsequent')
+    fs.writeFileSync(path.join(remote, 'version.txt'), 'subsequent\n')
+    git(remote, 'commit', '-am', 'subsequent')
+    git(workspace, 'fetch', 'origin', 'subsequent')
+    expect(git(workspace, 'show', 'FETCH_HEAD:version.txt')).toBe('subsequent')
+  })
+
+  test('an explicit branch follows its latest tip even with a tag of the same name', () => {
+    git(remote, 'tag', 'main', parent)
     fs.writeFileSync(path.join(remote, 'version.txt'), 'later\n')
     git(remote, 'commit', '-am', 'later')
     const latest = git(remote, 'rev-parse', 'HEAD')
