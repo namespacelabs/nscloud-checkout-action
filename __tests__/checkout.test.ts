@@ -54,7 +54,9 @@ describe('checkout action', () => {
     parent = git(remote, 'rev-parse', 'HEAD')
     git(remote, 'tag', 'stable')
     git(remote, 'branch', 'other')
-    git(remote, 'commit', '--allow-empty', '-m', 'queued')
+    fs.writeFileSync(path.join(remote, 'version.txt'), 'queued\n')
+    git(remote, 'add', 'version.txt')
+    git(remote, 'commit', '-m', 'queued')
     queued = git(remote, 'rev-parse', 'HEAD')
     env.GITHUB_SHA = queued
   })
@@ -70,7 +72,9 @@ describe('checkout action', () => {
     ['force-push', 'true']
   ])('pins the event SHA after a branch %s (dissociate=%s)', (movement, dissociate) => {
     if (movement !== 'advance') git(remote, 'reset', '--hard', parent)
-    git(remote, 'commit', '--allow-empty', '-m', 'later')
+    fs.writeFileSync(path.join(remote, 'version.txt'), 'later\n')
+    git(remote, 'add', 'version.txt')
+    git(remote, 'commit', '-m', 'later')
     if (movement === 'delete') {
       git(remote, 'checkout', 'other')
       git(remote, 'branch', '-D', 'main')
@@ -79,6 +83,7 @@ describe('checkout action', () => {
     checkout({ dissociate })
     if (dissociate === 'true') fs.rmSync(path.join(root, 'mirror'), { recursive: true })
 
+    expect(fs.readFileSync(path.join(workspace, 'version.txt'), 'utf8')).toBe('queued\n')
     expect(git(workspace, 'rev-parse', 'HEAD')).toBe(queued)
     expect(git(workspace, 'branch', '--show-current')).toBe('main')
     expect(git(workspace, 'rev-parse', '@{upstream}')).toBe(queued)
@@ -123,11 +128,13 @@ describe('checkout action', () => {
   })
 
   test('an explicit branch still follows its latest tip', () => {
-    git(remote, 'commit', '--allow-empty', '-m', 'later')
+    fs.writeFileSync(path.join(remote, 'version.txt'), 'later\n')
+    git(remote, 'commit', '-am', 'later')
     const latest = git(remote, 'rev-parse', 'HEAD')
 
     checkout({ ref: 'main' })
 
+    expect(fs.readFileSync(path.join(workspace, 'version.txt'), 'utf8')).toBe('later\n')
     expect(git(workspace, 'rev-parse', 'HEAD')).toBe(latest)
     expect(git(workspace, 'branch', '--show-current')).toBe('main')
   })
