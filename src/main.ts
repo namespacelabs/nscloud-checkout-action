@@ -141,6 +141,30 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
       config.maxAttempts,
       { env: referenceEnv }
     )
+
+    if (config.fetchDepth <= 0 && config.commit && checkoutInfo.pointerRef !== config.commit) {
+      const fetched = await getExecOutputWithGitEnv('git', [...gitRepoFlags, 'rev-parse', '--verify', `${checkoutInfo.pointerRef}^{commit}`], {
+        env: referenceEnv,
+        ignoreReturnCode: true
+      })
+      // The ref may have moved or disappeared since the workflow was queued.
+      if (fetched.exitCode !== 0 || fetched.stdout.trim().toUpperCase() !== config.commit.toUpperCase()) {
+        await execWithGitEnv(
+          'git',
+          [
+            ...gitRepoFlags,
+            'fetch',
+            '--no-tags',
+            '--no-recurse-submodules',
+            ...filterFlags,
+            'origin',
+            `+${config.commit}:${checkoutInfo.pointerRef}`
+          ],
+          config.maxAttempts,
+          { env: referenceEnv }
+        )
+      }
+    }
     core.endGroup()
 
     // If Git LFS is required, download objects. This should use the mirror cached LFS objects.
