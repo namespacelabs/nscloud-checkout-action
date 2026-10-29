@@ -15,6 +15,9 @@ if [ -f "./submodules-true/submodule-level-1/submodule-level-2/nested-submodule-
     exit 1
 fi
 
+echo "Testing submodule commit and contents"
+git -C ./submodules-true submodule foreach 'test "$(git rev-parse HEAD)" = "$sha1" && git diff --exit-code HEAD' || exit 1
+
 echo "Testing persisted credential"
 pushd ./submodules-true/submodule-level-1
 git config --local --name-only --get-regexp http.+extraheader && git fetch

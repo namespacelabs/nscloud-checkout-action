@@ -25,4 +25,11 @@ if head -c 40 "${REPO_PATH}/lfs-file.bin" | grep -q '^version https://git-lfs'; 
 fi
 
 LFS_SIZE=$(stat -c %s "${REPO_PATH}/lfs-file.bin" 2>/dev/null || stat -f %z "${REPO_PATH}/lfs-file.bin")
-echo "lfs-file.bin size: ${LFS_SIZE} bytes (not an LFS pointer)"
+EXPECTED_SIZE=$(git -C "$REPO_PATH" show HEAD:lfs-file.bin | sed -n 's/^size //p')
+EXPECTED_SHA=$(git -C "$REPO_PATH" show HEAD:lfs-file.bin | sed -n 's/^oid sha256://p')
+LFS_SHA=$(shasum -a 256 "${REPO_PATH}/lfs-file.bin" | awk '{print $1}')
+if [ "$LFS_SIZE" != "$EXPECTED_SIZE" ] || [ "$LFS_SHA" != "$EXPECTED_SHA" ]; then
+    echo "ERROR: lfs-file.bin does not match the committed LFS pointer"
+    exit 1
+fi
+echo "lfs-file.bin matches the committed SHA-256 and size (${LFS_SIZE} bytes)"

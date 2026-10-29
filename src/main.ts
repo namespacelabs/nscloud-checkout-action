@@ -74,10 +74,34 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
       await execWithGitEnv('git', ['clone', '--mirror', '--', remoteURL, mirrorDir], config.maxAttempts)
     }
 
+    // Fetch does not update a mirror's symbolic HEAD when the remote changes its default branch.
+    if (!config.ref && !config.commit) {
+      const output = await withGitRetries(
+        () => getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'ls-remote', '--symref', 'origin', 'HEAD']),
+        config.maxAttempts
+      )
+      const defaultBranch = output.stdout.match(/^ref: (refs\/heads\/.+)\tHEAD$/m)
+      if (!defaultBranch) throw new Error('Unable to determine the remote default branch.')
+      config.ref = defaultBranch[1]
+      await execWithGitEnv('git', ['--git-dir', mirrorDir, 'symbolic-ref', 'HEAD', config.ref], 1)
+    }
+
     // Fetch commits for mirror
     await execWithGitEnv(
       'git',
-      ['-c', 'protocol.version=2', '--git-dir', mirrorDir, 'fetch', '--no-recurse-submodules', '--prune', '--prune-tags', 'origin'],
+      [
+        '-c',
+        'protocol.version=2',
+        '--git-dir',
+        mirrorDir,
+        'fetch',
+        '--no-recurse-submodules',
+        '--prune',
+        '--prune-tags',
+        'origin',
+        '+refs/*:refs/*',
+        ...(config.commit ? [config.commit] : [])
+      ],
       config.maxAttempts
     )
 
@@ -85,7 +109,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir)
 
     if (config.downloadGitLFS && usesMirrorLFSCache(config.lfsMode)) {
-      const mirrorLFSArgs = buildMirrorLFSArgs(mirrorDir, config.lfsMode, checkoutInfo.originalRef)
+      const mirrorLFSArgs = buildMirrorLFSArgs(mirrorDir, config.lfsMode, config.commit || checkoutInfo.originalRef)
       await execWithGitEnv('git', mirrorLFSArgs, config.maxAttempts)
     }
     core.endGroup()
@@ -111,14 +135,14 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     await execWithGitEnv('git', ['config', '--global', '--add', 'safe.directory', repoDir], 1)
 
     const gitRepoFlags = ['--git-dir', `${repoDir}/.git`, '--work-tree', repoDir]
-    await execWithGitEnv('git', [...gitRepoFlags, 'remote', 'add', 'origin', remoteURL], 1)
+    await execWithGitEnv('git', [...gitRepoFlags, 'remote', 'add', 'origin', mirrorDir], 1)
 
     if (config.downloadGitLFS && !config.dissociateMainRepo && usesMirrorLFSCache(config.lfsMode)) {
       const mirrorLFSStorage = path.join(mirrorDir, 'lfs')
       await execWithGitEnv('git', [...gitRepoFlags, 'config', 'lfs.storage', mirrorLFSStorage], 1)
     }
 
-    // Fetch the refs
+    // Fetch from the synchronized mirror, then restore origin for subsequent operations.
     const fetchDepthFlags = config.fetchDepth <= 0 ? [] : ['--depth', config.fetchDepth.toString(), '--no-tags']
     const filterFlags = config.filter === '' ? [] : ['--filter', config.filter]
     const referenceEnv = {
@@ -127,6 +151,8 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     await execWithGitEnv(
       'git',
       [
+        '-c',
+        'uploadpack.allowFilter=true',
         ...gitRepoFlags,
         'fetch',
         '-v',
@@ -141,6 +167,21 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
       config.maxAttempts,
       { env: referenceEnv }
     )
+    await execWithGitEnv('git', [...gitRepoFlags, 'remote', 'set-url', 'origin', remoteURL], 1)
+
+    if (config.commit && checkoutInfo.pointerRef !== config.commit) {
+      const fetched = await getExecOutputWithGitEnv('git', [...gitRepoFlags, 'rev-parse', '--verify', `${checkoutInfo.pointerRef}^{commit}`], {
+        env: referenceEnv,
+        ignoreReturnCode: true
+      })
+      // The ref may have moved or disappeared since the workflow was queued.
+      if (fetched.exitCode !== 0 || fetched.stdout.trim().toUpperCase() !== config.commit.toUpperCase()) {
+        if (checkoutInfo.originalRef.toUpperCase().startsWith('REFS/TAGS/')) {
+          throw new Error(`The ref '${config.ref}' does not point to the expected commit '${config.commit}'.`)
+        }
+        await execWithGitEnv('git', [...gitRepoFlags, 'update-ref', checkoutInfo.pointerRef, config.commit], 1, { env: referenceEnv })
+      }
+    }
     core.endGroup()
 
     // If Git LFS is required, download objects. This should use the mirror cached LFS objects.
@@ -373,19 +414,14 @@ interface ICheckoutInfo {
 }
 
 async function getCheckoutInfo(ref: string, commit: string, depth: number, mirrorDir: string): Promise<ICheckoutInfo> {
-  // Nothing specified => find the default branch and use it as `ref`.
-  if (!ref && !commit) {
-    core.debug('No ref or commit => determine default branch')
-    // Luckily we have a faithful mirror of the remote locally, just resolve its HEAD.
-    const output = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'symbolic-ref', '--quiet', 'HEAD'])
-    ref = output.stdout.trim()
-    core.debug(`Detected default branch ${ref}`)
-  }
-
-  // Unqualified ref => resolve using normal Git rules.
+  // Prefer a branch over a tag with the same name, like actions/checkout.
   if (ref && !ref.toUpperCase().startsWith('REFS/')) {
     core.debug('Unqualified ref => resolve')
-    const output = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'rev-parse', '--verify', '--symbolic-full-name', ref])
+    const branch = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'show-ref', '--verify', '--quiet', `refs/heads/${ref}`], {
+      ignoreReturnCode: true
+    })
+    const qualifiedRef = branch.exitCode === 0 ? `refs/heads/${ref}` : `refs/tags/${ref}`
+    const output = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'rev-parse', '--verify', '--symbolic-full-name', qualifiedRef])
     ref = output.stdout.trim()
     core.debug(`Detected fully-qualified ref ${ref}`)
   }
@@ -424,7 +460,8 @@ async function getCheckoutInfo(ref: string, commit: string, depth: number, mirro
   if (depth > 0) {
     // Only fetch the requested ref
     if (ref) {
-      result.fetchRefs = [`+${commit || ref}:${result.pointerRef}`]
+      const source = upperRef.startsWith('REFS/TAGS/') ? ref : commit || ref
+      result.fetchRefs = [`+${source}:${result.pointerRef}`]
     } else {
       result.fetchRefs = [commit]
     }
@@ -572,10 +609,14 @@ function getGitExecOptions(options?: exec.ExecOptions): exec.ExecOptions {
 // Similar to exec.exec, but options.env is interpreted as variables to add (as opposed to replacing the env).
 async function execWithGitEnv(commandLine: string, args: string[], maxAttempts: number, options?: exec.ExecOptions): Promise<number> {
   const execOptions = getGitExecOptions(options)
+  return withGitRetries(() => exec.exec(commandLine, args, execOptions), maxAttempts)
+}
+
+async function withGitRetries<T>(operation: () => Promise<T>, maxAttempts: number): Promise<T> {
   let lastError: Error | undefined
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await exec.exec(commandLine, args, execOptions)
+      return await operation()
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
       if (attempt < maxAttempts) {

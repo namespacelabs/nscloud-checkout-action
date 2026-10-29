@@ -22,7 +22,15 @@ jobs:
           cache: 'npm'
       - name: Install dependencies
         run: npm ci
+      - name: Verify shipped bundle matches source
+        run: |
+          npm run package
+          git diff --exit-code -- dist
+      - name: Get upstream checkout for contract comparisons
+        run: git clone --depth=1 --branch v6 https://github.com/actions/checkout.git "$RUNNER_TEMP/actions-checkout"
       - name: Run jest tests
+        env:
+          CHECKOUT_REFERENCE_ACTION: ${{ runner.temp }}/actions-checkout/dist/index.js
         run: npx jest --ci
 
   compare-github:
@@ -60,7 +68,7 @@ jobs:
           ref: ${{ matrix.ref }}
           fetch-depth: ${{ matrix.fetch-depth }}
       - name: Compare checkouts
-        run: .github/tests/compare-checkouts.sh github-current nscloud-current dist/index.js
+        run: .github/tests/compare-checkouts.sh github-current nscloud-current
 
   basic-checkout:
     name: Basic checkout tests
