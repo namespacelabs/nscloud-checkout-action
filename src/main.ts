@@ -76,7 +76,10 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
 
     // Fetch does not update a mirror's symbolic HEAD when the remote changes its default branch.
     if (!config.ref && !config.commit) {
-      const output = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'ls-remote', '--symref', 'origin', 'HEAD'])
+      const output = await withGitRetries(
+        () => getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'ls-remote', '--symref', 'origin', 'HEAD']),
+        config.maxAttempts
+      )
       const defaultBranch = output.stdout.match(/^ref: (refs\/heads\/.+)\tHEAD$/m)
       if (!defaultBranch) throw new Error('Unable to determine the remote default branch.')
       config.ref = defaultBranch[1]
@@ -106,7 +109,7 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     const checkoutInfo = await getCheckoutInfo(config.ref, config.commit, config.fetchDepth, mirrorDir)
 
     if (config.downloadGitLFS && usesMirrorLFSCache(config.lfsMode)) {
-      const mirrorLFSArgs = buildMirrorLFSArgs(mirrorDir, config.lfsMode, checkoutInfo.originalRef)
+      const mirrorLFSArgs = buildMirrorLFSArgs(mirrorDir, config.lfsMode, config.commit || checkoutInfo.originalRef)
       await execWithGitEnv('git', mirrorLFSArgs, config.maxAttempts)
     }
     core.endGroup()
@@ -606,10 +609,14 @@ function getGitExecOptions(options?: exec.ExecOptions): exec.ExecOptions {
 // Similar to exec.exec, but options.env is interpreted as variables to add (as opposed to replacing the env).
 async function execWithGitEnv(commandLine: string, args: string[], maxAttempts: number, options?: exec.ExecOptions): Promise<number> {
   const execOptions = getGitExecOptions(options)
+  return withGitRetries(() => exec.exec(commandLine, args, execOptions), maxAttempts)
+}
+
+async function withGitRetries<T>(operation: () => Promise<T>, maxAttempts: number): Promise<T> {
   let lastError: Error | undefined
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await exec.exec(commandLine, args, execOptions)
+      return await operation()
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error))
       if (attempt < maxAttempts) {

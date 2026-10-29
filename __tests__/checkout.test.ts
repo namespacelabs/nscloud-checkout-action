@@ -84,24 +84,54 @@ describe('checkout action', () => {
     expect(compare).toThrow()
   })
 
-  test('discovers a changed default branch of another repository with a warm mirror', () => {
+  test.each(['1', '3'])('discovers a changed default branch after a transient failure (max-attempts=%s)', maxAttempts => {
     env.GITHUB_REPOSITORY = 'owner/workflow'
     checkout()
     expect(git(workspace, 'branch', '--show-current')).toBe('main')
+    const mirror = path.dirname(fs.readFileSync(path.join(workspace, '.git/objects/info/alternates'), 'utf8').trim())
 
     git(remote, 'checkout', '-b', 'trunk')
     fs.writeFileSync(path.join(remote, 'version.txt'), 'new default\n')
     git(remote, 'commit', '-am', 'new default')
     const expected = git(remote, 'rev-parse', 'HEAD')
 
+    const serveAfterFailure = path.join(root, 'serve-after-failure')
+    fs.writeFileSync(
+      serveAfterFailure,
+      '#!/bin/sh\nset -e\nif [ ! -f "$1.failed" ]; then touch "$1.failed"; exit 1; fi\nexec git upload-pack "$@"\n',
+      {
+        mode: 0o755
+      }
+    )
+    git(mirror, 'config', 'remote.origin.uploadpack', serveAfterFailure)
+
     workspace = path.join(root, 'second-workspace')
     fs.mkdirSync(workspace)
     env.GITHUB_WORKSPACE = workspace
-    checkout()
+    if (maxAttempts === '1') expect(() => checkout({ 'max-attempts': maxAttempts })).toThrow()
+    checkout({ 'max-attempts': maxAttempts })
 
     expect(git(workspace, 'branch', '--show-current')).toBe('trunk')
     expect(git(workspace, 'rev-parse', 'HEAD')).toBe(expected)
     expect(fs.readFileSync(path.join(workspace, 'version.txt'), 'utf8')).toBe('new default\n')
+  })
+
+  test.each(['0', '1'])('materializes the event commit LFS payload after its branch is deleted (depth=%s)', depth => {
+    git(remote, 'lfs', 'install', '--skip-repo')
+    git(remote, 'lfs', 'track', '*.bin')
+    const payload = Buffer.from([0, 255, 12, 42, 128, 9])
+    fs.writeFileSync(path.join(remote, 'payload.bin'), payload)
+    git(remote, 'add', '.')
+    git(remote, 'commit', '-m', 'queued LFS payload')
+    const expected = git(remote, 'rev-parse', 'HEAD')
+    env.GITHUB_SHA = expected
+    git(remote, 'checkout', 'other')
+    git(remote, 'branch', '-D', 'main')
+
+    checkout({ lfs: 'true', 'lfs-mode': 'ref', 'fetch-depth': depth })
+
+    expect(git(workspace, 'rev-parse', 'HEAD')).toBe(expected)
+    expect(fs.readFileSync(path.join(workspace, 'payload.bin'))).toEqual(payload)
   })
 
   // CI supplies the upstream bundle; ordinary unit tests can also run offline.
