@@ -28,6 +28,5 @@ echo "dist/ correctly excluded"
 echo ::endgroup::
 
 echo "::group::Compare sparse directory contents (gh | ns)"
-sdiff <(find "$gh/src" "$gh/.github" -type f 2>/dev/null | sed "s|^$gh/||" | sort) \
-      <(find "$ns/src" "$ns/.github" -type f 2>/dev/null | sed "s|^$ns/||" | sort) && echo same || exit 1
+diff -r -x .git "$gh" "$ns" || exit 1
 echo ::endgroup::

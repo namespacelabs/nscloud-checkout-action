@@ -35707,6 +35707,15 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
             external_node_fs_namespaceObject.mkdirSync(mirrorDir, { recursive: true });
             await execWithGitEnv('git', ['clone', '--mirror', '--', remoteURL, mirrorDir], config.maxAttempts);
         }
+        // Fetch does not update a mirror's symbolic HEAD when the remote changes its default branch.
+        if (!config.ref && !config.commit) {
+            const output = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'ls-remote', '--symref', 'origin', 'HEAD']);
+            const defaultBranch = output.stdout.match(/^ref: (refs\/heads\/.+)\tHEAD$/m);
+            if (!defaultBranch)
+                throw new Error('Unable to determine the remote default branch.');
+            config.ref = defaultBranch[1];
+            await execWithGitEnv('git', ['--git-dir', mirrorDir, 'symbolic-ref', 'HEAD', config.ref], 1);
+        }
         // Fetch commits for mirror
         await execWithGitEnv('git', [
             '-c',
@@ -35968,14 +35977,6 @@ function parseInputConfig() {
     return result;
 }
 async function getCheckoutInfo(ref, commit, depth, mirrorDir) {
-    // Nothing specified => find the default branch and use it as `ref`.
-    if (!ref && !commit) {
-        core.debug('No ref or commit => determine default branch');
-        // Luckily we have a faithful mirror of the remote locally, just resolve its HEAD.
-        const output = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'symbolic-ref', '--quiet', 'HEAD']);
-        ref = output.stdout.trim();
-        core.debug(`Detected default branch ${ref}`);
-    }
     // Prefer a branch over a tag with the same name, like actions/checkout.
     if (ref && !ref.toUpperCase().startsWith('REFS/')) {
         core.debug('Unqualified ref => resolve');

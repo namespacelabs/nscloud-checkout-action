@@ -65,6 +65,117 @@ describe('checkout action', () => {
     fs.rmSync(root, { recursive: true, force: true })
   })
 
+  test('the CI comparator rejects changed worktree contents', () => {
+    checkout({ path: 'left' })
+    checkout({ path: 'right' })
+    const compare = () =>
+      execFileSync('bash', ['-e', path.resolve(__dirname, '../.github/tests/compare-checkouts.sh'), 'left', 'right'], {
+        cwd: workspace,
+        env,
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+
+    expect(compare).not.toThrow()
+    fs.writeFileSync(path.join(workspace, 'right/version.txt'), 'corrupt\n')
+    expect(compare).toThrow()
+    fs.unlinkSync(path.join(workspace, 'right/version.txt'))
+    expect(compare).toThrow()
+    fs.writeFileSync(path.join(workspace, 'right/version.txt'), 'queued\n', { mode: 0o755 })
+    expect(compare).toThrow()
+  })
+
+  test('discovers a changed default branch of another repository with a warm mirror', () => {
+    env.GITHUB_REPOSITORY = 'owner/workflow'
+    checkout()
+    expect(git(workspace, 'branch', '--show-current')).toBe('main')
+
+    git(remote, 'checkout', '-b', 'trunk')
+    fs.writeFileSync(path.join(remote, 'version.txt'), 'new default\n')
+    git(remote, 'commit', '-am', 'new default')
+    const expected = git(remote, 'rev-parse', 'HEAD')
+
+    workspace = path.join(root, 'second-workspace')
+    fs.mkdirSync(workspace)
+    env.GITHUB_WORKSPACE = workspace
+    checkout()
+
+    expect(git(workspace, 'branch', '--show-current')).toBe('trunk')
+    expect(git(workspace, 'rev-parse', 'HEAD')).toBe(expected)
+    expect(fs.readFileSync(path.join(workspace, 'version.txt'), 'utf8')).toBe('new default\n')
+  })
+
+  // CI supplies the upstream bundle; ordinary unit tests can also run offline.
+  const referenceAction = process.env.CHECKOUT_REFERENCE_ACTION
+  const compareWithUpstream = referenceAction ? test.each : test.skip.each
+  compareWithUpstream(
+    ['0', '1'].flatMap(depth =>
+      ['advance', 'force-push', 'delete', 'orphan', 'branch', 'branch/tag collision', 'tag', 'annotated tag', 'moved tag', 'deleted pull'].map(
+        scenario => [depth, scenario]
+      )
+    )
+  )('matches actions/checkout for %s-depth %s', (depth, scenario) => {
+    const inputs: Record<string, string> = { 'fetch-depth': depth }
+    if (['force-push', 'delete', 'orphan', 'deleted pull'].includes(scenario)) git(remote, 'reset', '--hard', parent)
+    if (['advance', 'force-push', 'delete', 'orphan', 'branch', 'branch/tag collision', 'moved tag'].includes(scenario)) {
+      fs.writeFileSync(path.join(remote, 'version.txt'), 'later\n')
+      git(remote, 'add', 'version.txt')
+      git(remote, 'commit', '-m', 'later')
+    }
+    if (scenario === 'delete') {
+      git(remote, 'checkout', 'other')
+      git(remote, 'branch', '-D', 'main')
+    }
+    if (scenario === 'orphan') inputs.ref = queued
+    if (scenario === 'branch' || scenario === 'branch/tag collision') inputs.ref = 'main'
+    if (scenario === 'branch/tag collision') git(remote, 'tag', 'main', parent)
+    if (scenario === 'tag') inputs.ref = 'stable'
+    if (scenario === 'annotated tag' || scenario === 'moved tag') {
+      git(remote, 'tag', '-a', 'release', '-m', 'release')
+      env.GITHUB_REF = 'refs/tags/release'
+    }
+    if (scenario === 'deleted pull') env.GITHUB_REF = 'refs/pull/1/merge'
+
+    const referenceWorkspace = path.join(root, 'reference-workspace')
+    fs.mkdirSync(referenceWorkspace)
+    git(remote, 'config', '--global', '--add', `url.${pathToFileURL(remote).href}.insteadOf`, 'https://github.com/owner/repo')
+    // An existing repository avoids upstream's object-format API discovery.
+    git(referenceWorkspace, 'init')
+    git(referenceWorkspace, 'remote', 'add', 'origin', 'https://github.com/owner/repo')
+    const runReference = () =>
+      execFileSync(process.execPath, [referenceAction!], {
+        cwd: referenceWorkspace,
+        env: { ...env, GITHUB_WORKSPACE: referenceWorkspace, RUNNER_TEMP: root, INPUT_TOKEN: 'local-test', INPUT_CLEAN: 'false' },
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+
+    if (scenario === 'moved tag') {
+      expect(() => checkout(inputs)).toThrow()
+      expect(runReference).toThrow()
+      expect(() => git(referenceWorkspace, 'rev-parse', '--verify', 'HEAD')).toThrow()
+      return
+    }
+    checkout(inputs)
+    runReference()
+
+    for (const args of [
+      ['rev-parse', 'HEAD'],
+      ['branch', '--show-current'],
+      ['rev-list', '--count', 'HEAD'],
+      ['rev-parse', '--is-shallow-repository'],
+      ['ls-files', '--stage']
+    ]) {
+      expect(git(workspace, ...args)).toBe(git(referenceWorkspace, ...args))
+    }
+    for (const file of git(workspace, 'ls-files', '-z').split('\0').filter(Boolean)) {
+      expect(fs.readFileSync(path.join(workspace, file))).toEqual(fs.readFileSync(path.join(referenceWorkspace, file)))
+    }
+    // Shallow fetches may include incidental extra tags upstream; full history promises all refs.
+    if (depth === '0') expect(git(workspace, 'show-ref')).toBe(git(referenceWorkspace, 'show-ref'))
+    if (scenario === 'annotated tag') {
+      expect(git(workspace, 'rev-parse', 'refs/tags/release')).toBe(git(referenceWorkspace, 'rev-parse', 'refs/tags/release'))
+    }
+  })
+
   test.each([
     ['advance', 'false'],
     ['force-push', 'false'],
