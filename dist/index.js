@@ -35885,6 +35885,16 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         core.debug(`Remote URL: ${remoteURL}`);
         const mirrorDir = external_node_path_namespaceObject.join(mirrorRoot, mirrorSubdir(config));
         core.debug(`Mirror dir: ${mirrorDir}`);
+        if (external_node_fs_namespaceObject.existsSync(mirrorDir)) {
+            const result = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'rev-parse', '--is-bare-repository'], {
+                ignoreReturnCode: true,
+                silent: true
+            });
+            if (result.exitCode !== 0 || result.stdout.trim() !== 'true') {
+                core.warning(`Removing invalid Git mirror ${mirrorDir}`);
+                external_node_fs_namespaceObject.rmSync(mirrorDir, { recursive: true, force: true });
+            }
+        }
         if (!external_node_fs_namespaceObject.existsSync(mirrorDir)) {
             external_node_fs_namespaceObject.mkdirSync(mirrorDir, { recursive: true });
             await execWithGitEnv('git', ['clone', '--mirror', '--', remoteURL, mirrorDir], config.maxAttempts);

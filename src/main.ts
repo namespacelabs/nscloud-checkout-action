@@ -69,6 +69,16 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
     core.debug(`Remote URL: ${remoteURL}`)
     const mirrorDir = path.join(mirrorRoot, mirrorSubdir(config))
     core.debug(`Mirror dir: ${mirrorDir}`)
+    if (fs.existsSync(mirrorDir)) {
+      const result = await getExecOutputWithGitEnv('git', ['--git-dir', mirrorDir, 'rev-parse', '--is-bare-repository'], {
+        ignoreReturnCode: true,
+        silent: true
+      })
+      if (result.exitCode !== 0 || result.stdout.trim() !== 'true') {
+        core.warning(`Removing invalid Git mirror ${mirrorDir}`)
+        fs.rmSync(mirrorDir, { recursive: true, force: true })
+      }
+    }
     if (!fs.existsSync(mirrorDir)) {
       fs.mkdirSync(mirrorDir, { recursive: true })
       await execWithGitEnv('git', ['clone', '--mirror', '--', remoteURL, mirrorDir], config.maxAttempts)
