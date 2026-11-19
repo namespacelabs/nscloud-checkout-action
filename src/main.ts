@@ -74,8 +74,8 @@ See also https://namespace.so/docs/solutions/github-actions/caching#git-checkout
         ignoreReturnCode: true,
         silent: true
       })
-      if (result.exitCode !== 0 || result.stdout.trim() !== 'true') {
-        core.warning(`Removing invalid Git mirror ${mirrorDir}`)
+      if (result.exitCode !== 0 || result.stdout.trim() !== 'true' || hasMirrorLocks(mirrorDir)) {
+        core.warning(`Removing invalid or locked Git mirror ${mirrorDir}`)
         fs.rmSync(mirrorDir, { recursive: true, force: true })
       }
     }
@@ -518,6 +518,12 @@ async function cleanupGitAuth(opts: { global: true } | { repoDir: string }) {
 // The default runner user uid. This user retains the original cache path (without uid prefix)
 // to avoid cache resets for existing users.
 const defaultRunnerUid = 1001
+
+function hasMirrorLocks(mirrorDir: string): boolean {
+  return ['packed-refs.lock', 'HEAD.lock', 'config.lock', 'shallow.lock', 'FETCH_HEAD.lock', 'index.lock'].some(lock =>
+    fs.existsSync(path.join(mirrorDir, lock))
+  )
+}
 
 function mirrorSubdir(config: IInputConfig): string {
   const repo = `${config.owner}-${config.repo}`
