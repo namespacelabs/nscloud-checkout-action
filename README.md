@@ -6,6 +6,13 @@ the Namespace runner.
 
 This action uses [Namespace Cache Volumes](https://namespace.so/docs/concepts/storage) to store a mirror of your git repository, and uses it speed up the checkout process.
 
+### Interrupted mirror operations
+
+At checkout startup, the action checks a fixed list of mirror lock paths: `packed-refs.lock`, `HEAD.lock`, `config.lock`,
+`shallow.lock`, `FETCH_HEAD.lock`, and `index.lock`. If any is present, it deletes the mirror and clones it again.
+It does not scan repository files or individual branch-ref locks.
+Healthy mirrors continue to be reused. Recovery assumes no other Git process or checkout is using that mirror.
+
 ## Usage
 
 Both Namespace Cache Volume and Git mirror must be enabled. Note the `-with-cache` suffix and `nscloud-git-mirror-5gb` below.
